@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
@@ -29,6 +30,7 @@ statusline.load_status = lambda: {
     ],
 }
 statusline.time.time = lambda: now
+os.environ["TEAMCLAUDE_STATUSLINE_INDEX"] = "1"
 sys.stdin = __import__("io").StringIO('{"model":{"display_name":"Fable 5"}}')
 output = __import__("io").StringIO()
 sys.stdout = output
@@ -36,5 +38,6 @@ statusline.main()
 plain = output.getvalue()
 for ansi in (statusline.DIM, statusline.RESET, statusline.BOLD, statusline.CYAN, statusline.MAGENTA):
     plain = plain.replace(ansi, "")
-assert plain.startswith("Fable 5\n1 one")
-assert "\n▶2 two" in plain
+assert plain.startswith("Fable 5\n▶1 one")
+assert "\n▶1 one" in plain
+assert "\n2 two" in plain

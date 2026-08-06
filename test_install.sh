@@ -21,7 +21,8 @@ if [ "${1:-}" = status ] && [ "${2:-}" = --json ]; then
   fi
   exit
 fi
-printf 'PIN=%s ARGS=%s\n' "${TC_ACCT:-}" "$*"
+printf 'PIN=%s INDEX=%s ARGS=%s\n' \
+  "${TC_ACCT:-}" "${TEAMCLAUDE_STATUSLINE_INDEX:-}" "$*"
 SH
 chmod +x "$TEST_BIN/teamclaude"
 
@@ -52,7 +53,7 @@ PY
 selected=$(HOME="$TEST_HOME" PATH="$TEST_BIN:$PATH" \
   bash --noprofile --rcfile "$TEST_HOME/.bashrc" -ic 'claude 2 --continue' 2>/dev/null)
 grep -q 'TeamClaude #2: two@example.com' <<< "$selected"
-grep -q 'PIN=two@example.com ARGS=run -- --continue' <<< "$selected"
+grep -q 'PIN=two@example.com INDEX=2 ARGS=run -- --continue' <<< "$selected"
 
 HOME="$TEST_HOME" SHELL=/bin/zsh CLAUDE_DIR="$TEST_HOME/.claude" \
   PATH="$TEST_BIN:$PATH" \

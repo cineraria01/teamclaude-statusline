@@ -70,7 +70,7 @@ claude 1     # pin a new session to account 1
 claude 2 -c  # continue the latest session pinned to account 2
 ```
 
-The selector resolves the live account list at launch time, so it contains no hardcoded emails. A running Claude session cannot change accounts in place; start or resume a session with the desired number.
+The selector resolves the live account list at launch time, so it contains no hardcoded emails. `▶` follows the number pinned for that Claude session instead of TeamClaude's global automatic-route pointer. A running Claude session cannot change accounts in place; start or resume a session with the desired number.
 
 ## Configuration
 

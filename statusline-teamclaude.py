@@ -174,11 +174,28 @@ def main():
         return
 
     current = data.get("currentAccount")
+    try:
+        pinned_number = int(os.environ.get("TEAMCLAUDE_STATUSLINE_INDEX", ""))
+        if pinned_number < 1:
+            pinned_number = None
+    except ValueError:
+        pinned_number = None
     switch_threshold = data.get("switchThreshold") or 0.98
     now = time.time()
     for account_number, acct in enumerate(data.get("accounts", []), 1):
         name = short_name(acct.get("name", "?"))
         numbered_name = f"{account_number} {name}"
+        is_current = (
+            account_number == pinned_number
+            if pinned_number is not None
+            else acct.get("name") == current
+        )
+        marker = f"{CYAN}▶{RESET}" if is_current else ""
+        label = (
+            f"{BOLD}{numbered_name}{RESET}"
+            if is_current
+            else f"{DIM}{numbered_name}{RESET}"
+        )
         q = acct.get("quota") or {}
         five = q.get("unified5h")
         five_reset = q.get("unified5hReset")
@@ -194,12 +211,9 @@ def main():
             model_label = "S"
 
         if acct.get("disabled"):
-            parts.append(f"{DIM}{numbered_name} off{RESET}")
+            parts.append(f"{marker}{label} {DIM}off{RESET}")
             continue
 
-        marker = ""
-        if acct.get("name") == current:
-            marker = f"{CYAN}▶{RESET}"
         badge = ""
         if acct.get("rateLimitedUntil"):
             until = fmt_reset(acct["rateLimitedUntil"])
@@ -207,11 +221,6 @@ def main():
         elif acct.get("status") not in (None, "active"):
             badge = f" {YELLOW}{acct['status']}{RESET}"
 
-        label = (
-            f"{BOLD}{numbered_name}{RESET}"
-            if acct.get("name") == current
-            else f"{DIM}{numbered_name}{RESET}"
-        )
         if model_seven is not None and model_seven >= switch_threshold:
             opus = fmt_pct(seven)
             parts.append(
