@@ -28,6 +28,16 @@ The model and each numbered account are rendered on separate lines so every metr
 - Claude Code
 - `python3` (stdlib only, 3.8+)
 
+Add at least one account before installing the status line:
+
+```sh
+teamclaude login       # browser OAuth
+# or: teamclaude import
+# or: teamclaude login --api
+```
+
+The installer stops without changing Claude settings when TeamClaude is missing or has no accounts. If accounts exist but the proxy is stopped, installation succeeds and prints the command needed to start it.
+
 ## Install
 
 ```sh
@@ -43,8 +53,8 @@ cd teamclaude-statusline && ./install.sh
 
 The installer:
 
-1. copies `statusline-teamclaude.py` to `~/.claude/`
-2. registers it as `statusLine` in `~/.claude/settings.json` (backing the file up to `settings.json.bak` first; every other setting is preserved)
+1. copies the TeamClaude status line and its small compatibility wrapper to `~/.claude/`
+2. registers the wrapper as `statusLine` in `~/.claude/settings.json` (backing the file up to `settings.json.bak` first); an existing status line such as Orca is preserved and rendered before TeamClaude
 3. installs the numbered account selector and sources it from `~/.bashrc` or `~/.zshrc` without removing existing aliases/settings
 4. enables `teamclaude probe 300` so idle accounts' quota stays fresh — the probe only reads the usage endpoint and **does not spend quota** (skip with `NO_PROBE=1`)
 
@@ -88,7 +98,7 @@ The refresh interval (default 30s even when idle) lives in the `statusLine.refre
 curl -fsSL https://raw.githubusercontent.com/cineraria01/teamclaude-statusline/main/uninstall.sh | bash
 ```
 
-Removes the scripts, selector source block, and the `statusLine` entry it registered (only if it still points at this script). Existing shell aliases/settings are preserved. The quota probe is left as-is; `teamclaude probe off` disables it.
+Removes the scripts, selector source block, and the `statusLine` entry it registered (only if it still points at this script). A previously configured status line is restored, and existing shell aliases/settings are preserved. The quota probe is left as-is; `teamclaude probe off` disables it.
 
 ## 한국어 안내
 

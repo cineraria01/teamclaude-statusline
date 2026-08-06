@@ -5,24 +5,37 @@ set -euo pipefail
 
 CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
 SCRIPT_DEST="$CLAUDE_DIR/statusline-teamclaude.py"
+WRAPPER_DEST="$CLAUDE_DIR/statusline-wrapper.py"
 SELECTOR_DEST="$CLAUDE_DIR/teamclaude-selector.sh"
+CONFIG_DEST="$CLAUDE_DIR/teamclaude-statusline-config.json"
 SETTINGS="$CLAUDE_DIR/settings.json"
 
 if [ -f "$SETTINGS" ]; then
-  python3 - "$SETTINGS" "$SCRIPT_DEST" <<'PY'
+  python3 - "$SETTINGS" "$SCRIPT_DEST" "$WRAPPER_DEST" "$CONFIG_DEST" <<'PY'
 import json, shutil, sys
 
-settings_path, script_path = sys.argv[1], sys.argv[2]
+settings_path, script_path, wrapper_path, config_path = sys.argv[1:]
 with open(settings_path) as f:
     settings = json.load(f)
 sl = settings.get("statusLine")
-if sl and sl.get("command") == script_path:
+command = sl.get("command") if isinstance(sl, dict) else None
+if command in (script_path, wrapper_path):
     shutil.copy2(settings_path, settings_path + ".bak")
-    del settings["statusLine"]
+    try:
+        with open(config_path) as f:
+            previous = json.load(f).get("previousStatusLine")
+    except (OSError, ValueError):
+        previous = None
+    if previous is None:
+        del settings["statusLine"]
+        message = "statusLine removed"
+    else:
+        settings["statusLine"] = previous
+        message = "previous statusLine restored"
     with open(settings_path, "w") as f:
         json.dump(settings, f, indent=2, ensure_ascii=False)
         f.write("\n")
-    print(f"statusLine removed from {settings_path} (backup: .bak)")
+    print(f"{message} in {settings_path} (backup: .bak)")
 else:
     print("statusLine in settings.json is not ours; leaving it as-is")
 PY
@@ -55,6 +68,6 @@ if start >= 0 and finish >= 0:
 PY
 done
 
-rm -f "$SCRIPT_DEST" "$SELECTOR_DEST"
-echo "Removed $SCRIPT_DEST and $SELECTOR_DEST"
+rm -f "$SCRIPT_DEST" "$WRAPPER_DEST" "$SELECTOR_DEST" "$CONFIG_DEST"
+echo "Removed TeamClaude status line files from $CLAUDE_DIR"
 echo "Note: 'teamclaude probe' was left as-is; run 'teamclaude probe off' if you want it off."

@@ -5,6 +5,11 @@
 unalias claude 2>/dev/null || true
 
 claude() {
+    if ! command -v teamclaude >/dev/null 2>&1; then
+        printf 'TeamClaude is not installed. Run: npm install -g @karpeleslab/teamclaude\n' >&2
+        return 127
+    fi
+
     case "${1:-}" in
         ''|*[!0-9]*)
             command teamclaude run -- "$@"

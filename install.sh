@@ -12,31 +12,39 @@ set -euo pipefail
 REPO_RAW="https://raw.githubusercontent.com/cineraria01/teamclaude-statusline/main"
 CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
 SCRIPT_DEST="$CLAUDE_DIR/statusline-teamclaude.py"
+WRAPPER_DEST="$CLAUDE_DIR/statusline-wrapper.py"
 SELECTOR_DEST="$CLAUDE_DIR/teamclaude-selector.sh"
+CONFIG_DEST="$CLAUDE_DIR/teamclaude-statusline-config.json"
 SETTINGS="$CLAUDE_DIR/settings.json"
 
 command -v python3 >/dev/null || { echo "error: python3 is required" >&2; exit 1; }
+if ! command -v teamclaude >/dev/null 2>&1; then
+  echo "error: teamclaude is required" >&2
+  echo "install: npm install -g @karpeleslab/teamclaude" >&2
+  echo "then add an account: teamclaude login  (or: teamclaude import)" >&2
+  exit 1
+fi
+
+TEAMCLAUDE_SERVER_DOWN=0
+if TEAMCLAUDE_STATUS=$(teamclaude status --json 2>/dev/null); then
+  ACCOUNT_COUNT=$(python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("accounts", [])))' \
+    <<< "$TEAMCLAUDE_STATUS" 2>/dev/null || true)
+  if [ "$ACCOUNT_COUNT" = 0 ]; then
+    echo "error: teamclaude has no accounts" >&2
+    echo "add one: teamclaude login  (or: teamclaude import / teamclaude login --api)" >&2
+    exit 1
+  fi
+else
+  TEAMCLAUDE_ACCOUNTS=$(teamclaude accounts 2>/dev/null || true)
+  if [[ "$TEAMCLAUDE_ACCOUNTS" == *"No accounts configured."* ]]; then
+    echo "error: teamclaude has no accounts" >&2
+    echo "add one: teamclaude login  (or: teamclaude import / teamclaude login --api)" >&2
+    exit 1
+  fi
+  TEAMCLAUDE_SERVER_DOWN=1
+fi
 
 mkdir -p "$CLAUDE_DIR"
-
-# Never replace another status line silently.
-if [ -f "$SETTINGS" ]; then
-  python3 - "$SETTINGS" "$SCRIPT_DEST" <<'PY'
-import json, sys
-
-settings_path, script_path = sys.argv[1], sys.argv[2]
-try:
-    with open(settings_path) as f:
-        status_line = json.load(f).get("statusLine")
-except ValueError:
-    sys.exit(f"error: {settings_path} is not valid JSON; fix it and re-run")
-if status_line and status_line.get("command") != script_path:
-    sys.exit(
-        "error: another statusLine is already configured: "
-        f"{status_line.get('command')}\nremove it first, then re-run the installer"
-    )
-PY
-fi
 
 # Copy assets from a local checkout when run from the repo, otherwise download.
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-/dev/null}")" 2>/dev/null && pwd || true)"
@@ -50,15 +58,16 @@ install_asset() {
 }
 
 install_asset statusline-teamclaude.py "$SCRIPT_DEST"
+install_asset statusline-wrapper.py "$WRAPPER_DEST"
 install_asset teamclaude-selector.sh "$SELECTOR_DEST"
-chmod +x "$SCRIPT_DEST"
+chmod +x "$SCRIPT_DEST" "$WRAPPER_DEST"
 chmod 644 "$SELECTOR_DEST"
 
-# Merge statusLine into settings.json (backs up first; preserves everything else).
-python3 - "$SETTINGS" "$SCRIPT_DEST" <<'PY'
-import json, shutil, sys
+# Preserve any existing status line, then register the combined wrapper.
+python3 - "$SETTINGS" "$SCRIPT_DEST" "$WRAPPER_DEST" "$CONFIG_DEST" <<'PY'
+import json, os, shutil, sys
 
-settings_path, script_path = sys.argv[1], sys.argv[2]
+settings_path, script_path, wrapper_path, config_path = sys.argv[1:]
 try:
     with open(settings_path) as f:
         settings = json.load(f)
@@ -69,13 +78,26 @@ except FileNotFoundError:
 except ValueError:
     sys.exit(f"error: {settings_path} is not valid JSON; fix it and re-run")
 
-prev = settings.get("statusLine")
-if prev and prev.get("command") != script_path:
-    sys.exit(f"error: another statusLine is already configured: {prev.get('command')}")
+previous = settings.get("statusLine")
+previous_command = previous.get("command") if isinstance(previous, dict) else None
+if previous is not None and previous_command not in (script_path, wrapper_path):
+    config = {"previousStatusLine": previous}
+    print("preserved existing statusLine; it will run before TeamClaude")
+elif os.path.exists(config_path):
+    config = None
+else:
+    config = {"previousStatusLine": None}
+
+if config is not None:
+    temporary = config_path + ".tmp"
+    with open(temporary, "w") as f:
+        json.dump(config, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    os.replace(temporary, config_path)
 
 settings["statusLine"] = {
     "type": "command",
-    "command": script_path,
+    "command": wrapper_path,
     "refreshInterval": 30,
 }
 with open(settings_path, "w") as f:
@@ -83,6 +105,11 @@ with open(settings_path, "w") as f:
     f.write("\n")
 print(f"statusLine registered in {settings_path}")
 PY
+chmod 600 "$CONFIG_DEST"
+
+if [ "$TEAMCLAUDE_SERVER_DOWN" = 1 ]; then
+  echo "warning: TeamClaude proxy is not running; start it with 'teamclaude service install' or 'teamclaude server'" >&2
+fi
 
 # Source the numbered account selector after existing aliases/functions. The
 # marked block is replaced idempotently and uninstall removes only this block.
@@ -134,11 +161,8 @@ fi
 
 # Enable the background quota probe so idle accounts' usage stays fresh.
 # It only reads the usage endpoint and does not spend quota.
-if [ -z "${NO_PROBE:-}" ] && command -v teamclaude >/dev/null 2>&1; then
+if [ -z "${NO_PROBE:-}" ]; then
   teamclaude probe 300 || echo "warning: could not enable probe (is the proxy running?)" >&2
-elif ! command -v teamclaude >/dev/null 2>&1; then
-  echo "warning: teamclaude not found in PATH — the status line will show 'teamclaude not installed'" >&2
-  echo "         install it first: npm install -g @karpeleslab/teamclaude" >&2
 fi
 
 echo
