@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installer for teamclaude-statusline.
 #
-#   curl -fsSL https://raw.githubusercontent.com/cineraria01/teamclaude-statusline/main/install.sh | bash
+#   curl -fsSL "https://raw.githubusercontent.com/cineraria01/teamclaude-statusline/main/install.sh?$(date +%s)" | bash
 #
 # Options (env vars):
 #   CLAUDE_DIR               Claude Code config dir (default: ~/.claude)
@@ -18,6 +18,7 @@ CONFIG_DEST="$CLAUDE_DIR/teamclaude-statusline-config.json"
 SETTINGS="$CLAUDE_DIR/settings.json"
 
 command -v python3 >/dev/null || { echo "error: python3 is required" >&2; exit 1; }
+CACHE_BUST=$(python3 -c 'import time; print(int(time.time()))')
 if ! command -v teamclaude >/dev/null 2>&1; then
   echo "error: teamclaude is required" >&2
   echo "install: npm install -g @karpeleslab/teamclaude" >&2
@@ -53,7 +54,7 @@ install_asset() {
   if [ -n "$SRC_DIR" ] && [ -f "$SRC_DIR/$name" ]; then
     cp "$SRC_DIR/$name" "$destination"
   else
-    curl -fsSL "$REPO_RAW/$name" -o "$destination"
+    curl -fsSL "$REPO_RAW/$name?v=$CACHE_BUST" -o "$destination"
   fi
 }
 
