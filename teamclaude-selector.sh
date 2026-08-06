@@ -34,5 +34,6 @@ print(accounts[index].get("name", "") if 0 <= index < len(accounts) else "")
     fi
 
     printf 'TeamClaude #%s: %s\n' "$number" "$account"
-    TC_ACCT="$account" command teamclaude run -- "$@"
+    TEAMCLAUDE_STATUSLINE_INDEX="$number" TC_ACCT="$account" \
+        command teamclaude run -- "$@"
 }
