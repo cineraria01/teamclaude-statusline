@@ -41,7 +41,7 @@ The installer stops without changing Claude settings when TeamClaude is missing 
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/cineraria01/teamclaude-statusline/main/install.sh | bash
+curl -fsSL "https://raw.githubusercontent.com/cineraria01/teamclaude-statusline/main/install.sh?$(date +%s)" | bash
 ```
 
 Or from a clone:
@@ -95,7 +95,7 @@ The refresh interval (default 30s even when idle) lives in the `statusLine.refre
 ## Uninstall
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/cineraria01/teamclaude-statusline/main/uninstall.sh | bash
+curl -fsSL "https://raw.githubusercontent.com/cineraria01/teamclaude-statusline/main/uninstall.sh?$(date +%s)" | bash
 ```
 
 Removes the scripts, selector source block, and the `statusLine` entry it registered (only if it still points at this script). A previously configured status line is restored, and existing shell aliases/settings are preserved. The quota probe is left as-is; `teamclaude probe off` disables it.
