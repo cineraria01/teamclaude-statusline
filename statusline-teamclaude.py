@@ -2,16 +2,19 @@
 """Claude Code status line for teamclaude multi-account proxy.
 
 Reads the Claude Code session JSON from stdin, queries `teamclaude status
---json` (cached briefly to keep rendering fast), and prints a single line
+--json` (cached briefly to keep rendering fast), and prints compact lines
 showing per-account quota usage:
 
-    Fable 5 | ciner --.-- | cindy 0%.100% | >lucy 7%.19% | nextp 3%.46% | @06:30
+    Fable 5
+    1 ciner [5h -- ↻-- · O -- ↻-- · F -- ↻--]
+    >2 lucy [5h 7% ↻2h · O 58% ↻1d16h · F 19% ↻2d18h]
 
-For each account: <5h usage>%.<7d usage>% (the 7d figure prefers the
-model-specific bucket of the current route when available). ">" marks the
-account currently serving requests, "@HH:MM" is the current account's 5h
-window reset time. Rate-limited accounts show a stop marker with the
-unblock time; disabled accounts show "off".
+For each usable account: 5h usage@time-left, overall 7d usage@time-left, and
+model 7d usage@time-left (Fable, falling back to Sonnet when available).
+Accounts whose Fable quota reached teamclaude's switch threshold collapse to
+`O overall-usage · F stop reset-time`, because they remain usable for Opus.
+">" marks the account currently serving requests. Rate-limited accounts show
+a stop marker with the unblock time; disabled accounts show "off".
 
 Configuration (environment variables):
     TC_SL_CACHE_TTL   seconds to cache `teamclaude status` output (default 15)
@@ -46,7 +49,6 @@ else:
     RED = "\033[31m"
     CYAN = "\033[36m"
     MAGENTA = "\033[35m"
-
 
 def load_status():
     try:
@@ -110,6 +112,46 @@ def fmt_reset(value):
         return None
 
 
+def fmt_remaining(value, now=None):
+    """Return a compact reset countdown such as 1d16h or 2h3m."""
+    if not value:
+        return "--"
+    try:
+        if isinstance(value, (int, float)):
+            reset_at = value / 1000
+        else:
+            reset_at = datetime.fromisoformat(
+                str(value).replace("Z", "+00:00")
+            ).timestamp()
+        seconds = reset_at - (time.time() if now is None else now)
+        if seconds <= 0:
+            return "now"
+        minutes = int(seconds // 60)
+        if minutes == 0:
+            return "<1m"
+        days, minutes = divmod(minutes, 24 * 60)
+        hours, minutes = divmod(minutes, 60)
+        if days:
+            return f"{days}d{hours}h" if hours else f"{days}d"
+        if hours:
+            return f"{hours}h{minutes}m" if minutes else f"{hours}h"
+        return f"{minutes}m"
+    except (TypeError, ValueError, OSError, OverflowError):
+        return "--"
+
+
+def fmt_window(label, usage, reset, now):
+    return (
+        f"{DIM}{label}{RESET} {fmt_pct(usage)} "
+        f"{DIM}↻{fmt_remaining(reset, now)}{RESET}"
+    )
+
+
+def render_accounts(parts):
+    """Render the model and every account on separate lines."""
+    return "\n".join(parts)
+
+
 def main():
     try:
         session = json.load(sys.stdin)
@@ -132,19 +174,27 @@ def main():
         return
 
     current = data.get("currentAccount")
-    for acct in data.get("accounts", []):
+    switch_threshold = data.get("switchThreshold") or 0.98
+    now = time.time()
+    for account_number, acct in enumerate(data.get("accounts", []), 1):
         name = short_name(acct.get("name", "?"))
+        numbered_name = f"{account_number} {name}"
         q = acct.get("quota") or {}
         five = q.get("unified5h")
+        five_reset = q.get("unified5hReset")
+        seven = q.get("unified7d")
+        seven_reset = q.get("unified7dReset")
         # Prefer the model-specific 7d bucket when the proxy reports one.
-        seven = q.get("unified7dFable")
-        if seven is None:
-            seven = q.get("unified7dSonnet")
-        if seven is None:
-            seven = q.get("unified7d")
+        model_seven = q.get("unified7dFable")
+        model_seven_reset = q.get("unified7dFableReset")
+        model_label = "F"
+        if model_seven is None:
+            model_seven = q.get("unified7dSonnet")
+            model_seven_reset = q.get("unified7dSonnetReset")
+            model_label = "S"
 
         if acct.get("disabled"):
-            parts.append(f"{DIM}{name} off{RESET}")
+            parts.append(f"{DIM}{numbered_name} off{RESET}")
             continue
 
         marker = ""
@@ -157,17 +207,28 @@ def main():
         elif acct.get("status") not in (None, "active"):
             badge = f" {YELLOW}{acct['status']}{RESET}"
 
-        label = f"{BOLD}{name}{RESET}" if acct.get("name") == current else f"{DIM}{name}{RESET}"
-        parts.append(f"{marker}{label} {fmt_pct(five)}·{fmt_pct(seven)}{badge}")
+        label = (
+            f"{BOLD}{numbered_name}{RESET}"
+            if acct.get("name") == current
+            else f"{DIM}{numbered_name}{RESET}"
+        )
+        if model_seven is not None and model_seven >= switch_threshold:
+            opus = fmt_pct(seven)
+            parts.append(
+                f"{marker}{label} {DIM}O{RESET} {opus} · "
+                f"{RED}{model_label}⛔{RESET} "
+                f"{DIM}↻{fmt_remaining(model_seven_reset, now)}{RESET}{badge}"
+            )
+            continue
+        parts.append(
+            f"{marker}{label} {DIM}[{RESET}"
+            f"{fmt_window('5h', five, five_reset, now)} · "
+            f"{fmt_window('O', seven, seven_reset, now)} · "
+            f"{fmt_window(model_label, model_seven, model_seven_reset, now)}"
+            f"{DIM}]{RESET}{badge}"
+        )
 
-    for acct in data.get("accounts", []):
-        if acct.get("name") == current:
-            reset = fmt_reset((acct.get("quota") or {}).get("unified5hReset"))
-            if reset:
-                parts.append(f"{DIM}↻{reset}{RESET}")
-            break
-
-    print(" │ ".join(parts))
+    print(render_accounts(parts))
 
 
 if __name__ == "__main__":

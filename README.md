@@ -1,15 +1,22 @@
 # teamclaude-statusline
 
-Live per-account quota usage for the [teamclaude](https://www.npmjs.com/package/teamclaude) multi-account Claude proxy, right in your Claude Code status line.
+Live per-account quota usage for the [teamclaude](https://www.npmjs.com/package/@karpeleslab/teamclaude) multi-account Claude proxy, right in your Claude Code status line.
 
 ```
-Fable 5 │ ciner --·-- │ cindy 0%·100% │ ▶lucy 7%·19% │ nextp 3%·46% │ ↻06:30
+Fable 5
+1 cindy O 64% · F⛔ ↻8h30m
+2 ciner O 59% · F⛔ ↻1d16h
+3 nextp [5h 4% ↻4h · O 32% ↻1d21h · F 46% ↻1d21h]
+▶4 lucy [5h 7% ↻2h · O 58% ↻1d16h · F 19% ↻2d18h]
 ```
 
-Each account shows `5h-usage · 7d-usage` (the 7d figure prefers the model-specific bucket, e.g. Fable/Sonnet weekly quota, when the proxy reports one):
+Each account shows `[5h usage ↻reset countdown · Opus/overall 7d usage ↻reset countdown · model 7d usage ↻reset countdown]` (`O` for Opus/overall, `F` for Fable, falling back to `S` for Sonnet when available):
+
+`-- ↻--` means teamclaude did not report that usage window or its reset time.
+When the Fable quota reaches teamclaude's switch threshold, the account remains usable for Opus and collapses to `O overall-usage · F⛔ ↻reset countdown`.
+The model and each numbered account are rendered on separate lines so every metric group stays visible and uncluttered.
 
 - `▶` — the account currently serving your requests
-- `↻HH:MM` — when the current account's 5h window resets (local time)
 - `⛔HH:MM` — the account is rate-limited until that time
 - `off` — the account is excluded from rotation
 - colors: green < 70% < yellow < 90% < red
@@ -17,7 +24,7 @@ Each account shows `5h-usage · 7d-usage` (the 7d figure prefers the model-speci
 
 ## Requirements
 
-- [teamclaude](https://www.npmjs.com/package/teamclaude) installed and running (`npm install -g teamclaude`)
+- [teamclaude](https://www.npmjs.com/package/@karpeleslab/teamclaude) installed and running (`npm install -g @karpeleslab/teamclaude`)
 - Claude Code
 - `python3` (stdlib only, 3.8+)
 
@@ -38,9 +45,22 @@ The installer:
 
 1. copies `statusline-teamclaude.py` to `~/.claude/`
 2. registers it as `statusLine` in `~/.claude/settings.json` (backing the file up to `settings.json.bak` first; every other setting is preserved)
-3. enables `teamclaude probe 300` so idle accounts' quota stays fresh — the probe only reads the usage endpoint and **does not spend quota** (skip with `NO_PROBE=1`)
+3. installs the numbered account selector and sources it from `~/.bashrc` or `~/.zshrc` without removing existing aliases/settings
+4. enables `teamclaude probe 300` so idle accounts' quota stays fresh — the probe only reads the usage endpoint and **does not spend quota** (skip with `NO_PROBE=1`)
 
 Restart Claude Code (or start a new session) and the status line appears.
+
+## Numbered account selection
+
+Account numbers follow the top-to-bottom order shown in the status line and `teamclaude status`:
+
+```sh
+claude       # automatic rotation
+claude 1     # pin a new session to account 1
+claude 2 -c  # continue the latest session pinned to account 2
+```
+
+The selector resolves the live account list at launch time, so it contains no hardcoded emails. A running Claude session cannot change accounts in place; start or resume a session with the desired number.
 
 ## Configuration
 
@@ -52,6 +72,14 @@ Environment variables read by the script:
 | `TC_SL_CACHE_FILE` | `$TMPDIR/tc-statusline-cache-$UID.json` | cache file path |
 | `NO_COLOR` | unset | disable ANSI colors ([no-color.org](https://no-color.org)) |
 
+Installer-only environment variables:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CLAUDE_DIR` | `~/.claude` | Claude Code config directory |
+| `TEAMCLAUDE_SHELL_RC` | detected Bash/Zsh rc | shell rc file to update |
+| `NO_PROBE` | unset | set to `1` to skip `teamclaude probe 300` |
+
 The refresh interval (default 30s even when idle) lives in the `statusLine.refreshInterval` field of `~/.claude/settings.json`.
 
 ## Uninstall
@@ -60,11 +88,11 @@ The refresh interval (default 30s even when idle) lives in the `statusLine.refre
 curl -fsSL https://raw.githubusercontent.com/cineraria01/teamclaude-statusline/main/uninstall.sh | bash
 ```
 
-Removes the script and the `statusLine` entry it registered (only if it still points at this script). The quota probe is left as-is; `teamclaude probe off` disables it.
+Removes the scripts, selector source block, and the `statusLine` entry it registered (only if it still points at this script). Existing shell aliases/settings are preserved. The quota probe is left as-is; `teamclaude probe off` disables it.
 
 ## 한국어 안내
 
-teamclaude 다계정 프록시의 계정별 사용량(5시간·7일 쿼터)을 Claude Code 상태줄에 상시 표시합니다. 위의 원라인 설치 명령을 실행한 뒤 Claude Code를 재시작하면 됩니다. `▶`는 현재 라우팅 중인 계정, `↻`는 현재 계정의 5시간 윈도 리셋 시각, `⛔`는 레이트리밋 해제 시각입니다. 설치 스크립트는 `~/.claude/settings.json`을 백업 후 `statusLine` 항목만 추가하며, 다른 설정은 건드리지 않습니다.
+teamclaude 다계정 프록시의 계정별 사용량과 갱신까지 남은 시간(5시간·전체 7일·모델별 7일 쿼터)을 Claude Code 상태줄에 상시 표시합니다. 위의 원라인 설치 명령을 실행한 뒤 Claude Code를 재시작하면 됩니다. `▶`는 현재 라우팅 중인 계정, `⛔`는 레이트리밋 해제 시각입니다. `claude 1`, `claude 2`처럼 상태줄 순서의 계정을 선택할 수 있고, 번호는 실행 시점의 실제 계정 목록에서 읽습니다. 설치 스크립트는 기존 Claude·셸 설정을 백업하고 자신이 추가한 항목만 관리합니다.
 
 ## License
 
