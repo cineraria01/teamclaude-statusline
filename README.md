@@ -1,6 +1,6 @@
 # teamclaude-statusline
 
-Live per-account quota usage for the [teamclaude](https://www.npmjs.com/package/@karpeleslab/teamclaude) multi-account Claude proxy, right in your Claude Code status line.
+Live per-account quota usage for the [teamclaude](https://github.com/jung-wan-kim/teamclaude) multi-account Claude proxy, right in your Claude Code status line.
 
 ```
 Fable 5
@@ -33,7 +33,7 @@ occupy two cells.
 
 ## Requirements
 
-- [teamclaude](https://www.npmjs.com/package/@karpeleslab/teamclaude) installed and running (`npm install -g @karpeleslab/teamclaude`)
+- [teamclaude](https://github.com/jung-wan-kim/teamclaude) installed and running — recommended: the [jung-wan-kim/teamclaude](https://github.com/jung-wan-kim/teamclaude) fork with active warm-up and `restart` (`npm install -g github:jung-wan-kim/teamclaude`); the npm original [@karpeleslab/teamclaude](https://www.npmjs.com/package/@karpeleslab/teamclaude) (`npm install -g @karpeleslab/teamclaude`) also works
 - Claude Code
 - `python3` (stdlib only, 3.8+)
 
@@ -114,7 +114,7 @@ Removes the scripts, selector source block, and the `statusLine` entry it regist
 
 ## 한국어 안내
 
-teamclaude 다계정 프록시의 계정별 사용량과 갱신까지 남은 시간(5시간·전체 7일·모델별 7일 쿼터), 요금제, 예상 결제일 D-day를 teamclaude TUI와 같은 막대 대시보드 형태로 Claude Code 상태줄에 상시 표시합니다. 최상단 `FLEET` 줄은 활성 계정 전체의 평균 사용률과 가장 빠른 리셋 시각입니다. 위의 원라인 설치 명령을 실행한 뒤 Claude Code를 재시작하면 됩니다. `>`는 현재 라우팅 중인 계정, 상태 칸의 `!시각`은 레이트리밋 해제 시각입니다(CJK 터미널에서 칸이 밀리지 않도록 모든 표시는 ASCII만 사용합니다). `claude 1`, `claude 2`처럼 상태줄 순서의 계정을 선택할 수 있고, 번호는 실행 시점의 실제 계정 목록에서 읽습니다. 설치 스크립트는 기존 Claude·셸 설정을 백업하고 자신이 추가한 항목만 관리합니다.
+teamclaude는 [jung-wan-kim/teamclaude](https://github.com/jung-wan-kim/teamclaude) 포크 설치를 권장합니다(`npm install -g github:jung-wan-kim/teamclaude` — active warm-up과 `restart` 명령 포함). 이 상태줄은 그 다계정 프록시의 계정별 사용량과 갱신까지 남은 시간(5시간·전체 7일·모델별 7일 쿼터), 요금제, 예상 결제일 D-day를 teamclaude TUI와 같은 막대 대시보드 형태로 Claude Code 상태줄에 상시 표시합니다. 최상단 `FLEET` 줄은 활성 계정 전체의 평균 사용률과 가장 빠른 리셋 시각입니다. 위의 원라인 설치 명령을 실행한 뒤 Claude Code를 재시작하면 됩니다. `>`는 현재 라우팅 중인 계정, 상태 칸의 `!시각`은 레이트리밋 해제 시각입니다(CJK 터미널에서 칸이 밀리지 않도록 모든 표시는 ASCII만 사용합니다). `claude 1`, `claude 2`처럼 상태줄 순서의 계정을 선택할 수 있고, 번호는 실행 시점의 실제 계정 목록에서 읽습니다. 설치 스크립트는 기존 Claude·셸 설정을 백업하고 자신이 추가한 항목만 관리합니다.
 
 ## License
 
