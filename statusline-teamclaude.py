@@ -6,8 +6,8 @@ Reads the Claude Code session JSON from stdin, queries `teamclaude status
 showing per-account quota usage:
 
     Fable 5
-    1 ciner [5h -- ↻-- · O -- ↻-- · F -- ↻--]
-    >2 lucy [5h 7% ↻2h · O 58% ↻1d16h · F 19% ↻2d18h]
+    1 alice@example.com [5h -- ↻-- · O -- ↻-- · F -- ↻--]
+    >2 bob@example.com [5h 7% ↻2h · O 58% ↻1d16h · F 19% ↻2d18h]
 
 For each usable account: 5h usage@time-left, overall 7d usage@time-left, and
 model 7d usage@time-left (Fable, falling back to Sonnet when available).
@@ -91,11 +91,6 @@ def fmt_pct(frac):
     if frac is None:
         return f"{DIM}--{RESET}"
     return f"{pct_color(frac)}{round(frac * 100)}%{RESET}"
-
-
-def short_name(email):
-    local = email.split("@")[0]
-    return local[:5].rstrip("._-")
 
 
 def fmt_reset(value):
@@ -183,7 +178,7 @@ def main():
     switch_threshold = data.get("switchThreshold") or 0.98
     now = time.time()
     for account_number, acct in enumerate(data.get("accounts", []), 1):
-        name = short_name(acct.get("name", "?"))
+        name = acct.get("name", "?")
         numbered_name = f"{account_number} {name}"
         is_current = (
             account_number == pinned_number

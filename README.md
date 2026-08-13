@@ -4,10 +4,10 @@ Live per-account quota usage for the [teamclaude](https://www.npmjs.com/package/
 
 ```
 Fable 5
-1 cindy O 64% · F⛔ ↻8h30m
-2 ciner O 59% · F⛔ ↻1d16h
-3 nextp [5h 4% ↻4h · O 32% ↻1d21h · F 46% ↻1d21h]
-▶4 lucy [5h 7% ↻2h · O 58% ↻1d16h · F 19% ↻2d18h]
+1 alice@example.com O 64% · F⛔ ↻8h30m
+2 bob@example.com O 59% · F⛔ ↻1d16h
+3 carol@example.com [5h 4% ↻4h · O 32% ↻1d21h · F 46% ↻1d21h]
+▶4 dave@example.com [5h 7% ↻2h · O 58% ↻1d16h · F 19% ↻2d18h]
 ```
 
 Each account shows `[5h usage ↻reset countdown · Opus/overall 7d usage ↻reset countdown · model 7d usage ↻reset countdown]` (`O` for Opus/overall, `F` for Fable, falling back to `S` for Sonnet when available):
