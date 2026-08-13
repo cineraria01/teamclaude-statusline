@@ -81,10 +81,16 @@ npm 원본(`@karpeleslab/teamclaude`)은 headless 서버에 설정 변경을 반
 그 배선만 뚫는 작은 패치를 함께 적용합니다 (새 로직 없음, 1.4.2 기준):
 
 ```sh
+teamclaude switch 1                   # 1번 계정으로 지금 전환 — 돌고 있던 세션도 다음 요청부터 이동
 teamclaude disable some@account.com   # → "Applied to the running server (no restart needed)"
 teamclaude priority main@account.com 1  # 즉시 반영
 teamclaude reload                     # 설정 파일을 직접 고친 뒤 수동 반영
 ```
+
+`switch <번호|계정>`은 대상 계정을 활성 + 우선순위 1로 올리고 나머지는 자동
+순서로 되돌린 뒤, 실행 중인 서버의 세션-계정 고정(affinity)까지 풀어 **이미 돌고
+있던 Claude 세션도 다음 요청부터** 그 계정으로 옮긴다. 번호는 `teamclaude
+accounts` 순서다. (계정이 바뀌면 프롬프트 캐시는 새로 쌓인다.)
 
 - 적용 대상은 `@karpeleslab/teamclaude`뿐이며, 이미 리로드가 있는 빌드(포크 등)는
   자동으로 건너뜁니다. `NO_RELOAD_PATCH=1`로 끌 수 있습니다.
@@ -218,10 +224,17 @@ only the TUI "R" key reaches it. The installer applies a small patch that wires
 it up (no new logic; written against 1.4.2):
 
 ```sh
+teamclaude switch 1                     # switch to account 1 NOW — running sessions move too
 teamclaude disable some@account.com     # → "Applied to the running server (no restart needed)"
 teamclaude priority main@account.com 1  # instant
 teamclaude reload                       # manual apply after editing the config file
 ```
+
+`switch <number|name>` enables the target, gives it priority 1, returns every
+other account to automatic ordering, and resets the running server's
+session-account affinity so **already-running Claude sessions move over on
+their next request**. Numbers follow the `teamclaude accounts` order. (Prompt
+cache re-warms on the new account.)
 
 - Only `@karpeleslab/teamclaude` is patched; builds that already have a reload
   (forks, or a future upstream) are skipped automatically. Opt out with
