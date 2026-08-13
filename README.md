@@ -38,7 +38,7 @@ teamclaude login       # browser OAuth
 
 The installer stops without changing Claude settings when TeamClaude is missing or has no accounts. If accounts exist but the proxy is stopped, installation succeeds and prints the command needed to start it.
 
-teamclaude builds without `status --json` (e.g. custom 1.3.x builds) also work: the status line and the numbered selector fall back to the running proxy's `/teamclaude/status` HTTP endpoint and normalize its field names (`modelWeekly` → model 7d bucket, `enabled` → `disabled`). Only the optional quota probe requires a build with the `probe` command.
+teamclaude builds without `status --json` (e.g. the [jung-wan-kim/teamclaude](https://github.com/jung-wan-kim/teamclaude) fork) also work: the status line and the numbered selector fall back to the running proxy's `/teamclaude/status` HTTP endpoint and normalize its field names (`modelWeekly` → model 7d bucket, `enabled` → `disabled`). Only the optional quota probe requires a build with the `probe` command.
 
 ## Install
 
