@@ -5,6 +5,12 @@ REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 TEST_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEST_DIR"' EXIT
 
+# Keep status-line invocations hermetic: a live installation on this machine
+# shares the default cache path (and would leak real account data in), and
+# ANSI colors would break the exact-line greps below.
+export TC_SL_CACHE_FILE="$TEST_DIR/statusline-cache.json"
+export NO_COLOR=1
+
 TEST_HOME="$TEST_DIR/home"
 TEST_BIN="$TEST_DIR/bin"
 mkdir -p "$TEST_HOME/.claude" "$TEST_BIN"

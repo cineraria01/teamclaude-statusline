@@ -22,6 +22,29 @@ assert statusline.render_accounts(["M", "a", "b", "c"]) == (
 )
 assert statusline.render_accounts(["a", "b"]) == "a\nb"
 
+# _normalize maps 1.3.x proxy-endpoint field names onto the expected ones and
+# leaves already-normalized data untouched.
+normalized = statusline._normalize({
+    "accounts": [
+        {
+            "name": "legacy@example.com",
+            "enabled": False,
+            "quota": {"modelWeekly": {"7d_oi": {"utilization": 0.27, "reset": 123}}},
+        },
+        {
+            "name": "modern@example.com",
+            "disabled": False,
+            "quota": {"unified7dFable": 0.5, "unified7dFableReset": 456},
+        },
+    ]
+})
+legacy, modern = normalized["accounts"]
+assert legacy["disabled"] is True
+assert legacy["quota"]["unified7dFable"] == 0.27
+assert legacy["quota"]["unified7dFableReset"] == 123
+assert modern["disabled"] is False
+assert modern["quota"]["unified7dFable"] == 0.5
+
 statusline.load_status = lambda: {
     "currentAccount": "two@example.com",
     "accounts": [

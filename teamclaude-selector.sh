@@ -28,6 +28,30 @@ index = int(sys.argv[1]) - 1
 print(accounts[index].get("name", "") if 0 <= index < len(accounts) else "")
 ' "$number" 2>/dev/null)
 
+    # Fallback for teamclaude builds without `status --json`: ask the running
+    # proxy's status endpoint directly.
+    if [ -z "$account" ]; then
+        account=$(python3 -c '
+import json
+import sys
+import urllib.request
+
+port = 3456
+try:
+    with open("'"$HOME"'/.config/teamclaude.json") as f:
+        port = (json.load(f).get("proxy") or {}).get("port") or 3456
+except (OSError, ValueError):
+    pass
+try:
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}/teamclaude/status", timeout=3) as res:
+        accounts = json.load(res).get("accounts", [])
+except OSError:
+    accounts = []
+index = int(sys.argv[1]) - 1
+print(accounts[index].get("name", "") if 0 <= index < len(accounts) else "")
+' "$number" 2>/dev/null)
+    fi
+
     if [ -z "$account" ]; then
         printf 'TeamClaude account number not found: %s\n' "$number" >&2
         return 2

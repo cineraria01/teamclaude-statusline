@@ -3,7 +3,9 @@
 
 Reads the Claude Code session JSON from stdin, queries `teamclaude status
 --json` (cached briefly to keep rendering fast), and prints compact lines
-showing per-account quota usage:
+showing per-account quota usage. When the installed teamclaude build lacks
+`status --json`, the running proxy's `/teamclaude/status` endpoint is read
+directly instead:
 
     Fable 5
     1 alice@example.com [5h -- ↻-- · O -- ↻-- · F -- ↻--]
@@ -50,6 +52,39 @@ else:
     CYAN = "\033[36m"
     MAGENTA = "\033[35m"
 
+def _normalize(data):
+    """Map fields from teamclaude builds whose status JSON predates the
+    unified7dFable/disabled naming (e.g. the 1.3.x proxy endpoint)."""
+    for acct in data.get("accounts", []):
+        if "disabled" not in acct and "enabled" in acct:
+            acct["disabled"] = not acct["enabled"]
+        q = acct.get("quota") or {}
+        if "unified7dFable" not in q:
+            model_weekly = (q.get("modelWeekly") or {}).get("7d_oi") or {}
+            if "utilization" in model_weekly:
+                q["unified7dFable"] = model_weekly.get("utilization")
+                q["unified7dFableReset"] = model_weekly.get("reset")
+                acct["quota"] = q
+    return data
+
+
+def _http_status():
+    """Fallback for teamclaude builds without `status --json`: read the
+    running proxy's /teamclaude/status endpoint directly."""
+    import urllib.request
+
+    port = 3456
+    try:
+        with open(os.path.expanduser("~/.config/teamclaude.json")) as f:
+            port = (json.load(f).get("proxy") or {}).get("port") or 3456
+    except (OSError, ValueError):
+        pass
+    with urllib.request.urlopen(
+        f"http://127.0.0.1:{port}/teamclaude/status", timeout=3
+    ) as res:
+        return json.load(res)
+
+
 def load_status():
     try:
         st = os.stat(CACHE)
@@ -58,23 +93,32 @@ def load_status():
                 return json.load(f)
     except (OSError, ValueError):
         pass
+    data = None
     try:
         out = subprocess.run(
             ["teamclaude", "status", "--json"],
             capture_output=True, text=True, timeout=5,
         )
-        if out.returncode != 0:
+        if out.returncode == 0:
+            data = json.loads(out.stdout)
+    except FileNotFoundError:
+        return "missing"
+    except Exception:
+        data = None
+    if data is None:
+        try:
+            data = _http_status()
+        except Exception:
             return None
-        data = json.loads(out.stdout)
+    try:
+        data = _normalize(data)
         tmp = CACHE + ".tmp"
         with open(tmp, "w") as f:
             json.dump(data, f)
         os.replace(tmp, CACHE)
-        return data
-    except FileNotFoundError:
-        return "missing"
     except Exception:
-        return None
+        pass
+    return data
 
 
 def pct_color(frac):

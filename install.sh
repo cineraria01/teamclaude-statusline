@@ -163,7 +163,7 @@ fi
 # Enable the background quota probe so idle accounts' usage stays fresh.
 # It only reads the usage endpoint and does not spend quota.
 if [ -z "${NO_PROBE:-}" ]; then
-  teamclaude probe 300 || echo "warning: could not enable probe (is the proxy running?)" >&2
+  teamclaude probe 300 || echo "warning: could not enable probe (proxy stopped, or this teamclaude build lacks the probe command; quota still refreshes as requests flow)" >&2
 fi
 
 echo
