@@ -2,35 +2,44 @@
 """Claude Code status line for teamclaude multi-account proxy.
 
 Reads the Claude Code session JSON from stdin, queries `teamclaude status
---json` (cached briefly to keep rendering fast), and prints compact lines
-showing per-account quota usage. When the installed teamclaude build lacks
-`status --json`, the running proxy's `/teamclaude/status` endpoint is read
-directly instead:
+--json` (cached briefly to keep rendering fast), and renders a compact
+TUI-style dashboard mirroring the teamclaude TUI: a pooled FLEET row on top,
+then one aligned row per account with plan / status columns, background-bar
+gauges for the 5h session, 7d overall and 7d model windows (usage% and reset
+countdown inside the bar), and the ESTIMATED next-billing countdown (D-8,
+D-DAY) on the right:
 
     Fable 5
-    1 alice@example.com [5h -- ↻-- · O -- ↻-- · F -- ↻--]
-    >2 bob@example.com [5h 7% ↻2h · O 58% ↻1d16h · F 19% ↻2d18h]
+       FLEET         x4      pooled Ses ██ 7% 6m ██ Wk ...
+    > 1. cindyholic10  Max 20x active Ses ██ 26% 6m ██ ...  D-25
 
-For each usable account: 5h usage@time-left, overall 7d usage@time-left, and
-model 7d usage@time-left (Fable, falling back to Sonnet when available).
-Accounts whose Fable quota reached teamclaude's switch threshold collapse to
-`O overall-usage · F stop reset-time`, because they remain usable for Opus.
-">" marks the account currently serving requests. Rate-limited accounts show
-a stop marker with the unblock time; disabled accounts show "off".
+Every cell sticks to ASCII (marker '>', 'x4', '!HH:MM' for rate limits)
+because ambiguous-width glyphs (▶ × ⛔) render 2 cells wide in CJK
+terminals and would break the column alignment. When the installed
+teamclaude build lacks `status --json`, the running proxy's
+`/teamclaude/status` endpoint is read directly instead.
+
+The billing estimate is the monthly anniversary of the subscription's
+creation (clamped to shorter months), exactly as the teamclaude TUI computes
+it; it is hidden when the subscription is not healthy — the red status
+column already says billing is broken. The FLEET row pools enabled accounts
+the way the TUI does: average utilization per window, soonest reset.
 
 Configuration (environment variables):
     TC_SL_CACHE_TTL   seconds to cache `teamclaude status` output (default 15)
     TC_SL_CACHE_FILE  cache file path (default: $TMPDIR/tc-statusline-cache-$UID.json)
+    TC_SL_BAR_WIDTH   width of each quota bar in characters (default 12)
     NO_COLOR          disable ANSI colors when set (https://no-color.org)
 """
 
+import calendar
 import json
 import os
 import subprocess
 import sys
 import tempfile
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 CACHE = os.environ.get("TC_SL_CACHE_FILE") or os.path.join(
     tempfile.gettempdir(), f"tc-statusline-cache-{os.getuid()}.json"
@@ -39,10 +48,13 @@ try:
     CACHE_TTL = float(os.environ.get("TC_SL_CACHE_TTL", "15"))
 except ValueError:
     CACHE_TTL = 15.0
+try:
+    BAR_W = max(6, int(os.environ.get("TC_SL_BAR_WIDTH", "12")))
+except ValueError:
+    BAR_W = 12
 
-if os.environ.get("NO_COLOR"):
-    DIM = RESET = BOLD = GREEN = YELLOW = RED = CYAN = MAGENTA = ""
-else:
+COLOR = not os.environ.get("NO_COLOR")
+if COLOR:
     DIM = "\033[2m"
     RESET = "\033[0m"
     BOLD = "\033[1m"
@@ -51,6 +63,13 @@ else:
     RED = "\033[31m"
     CYAN = "\033[36m"
     MAGENTA = "\033[35m"
+else:
+    DIM = RESET = BOLD = GREEN = YELLOW = RED = CYAN = MAGENTA = ""
+
+NAME_W = 13
+PLAN_W = 7   # "Max 20x"
+STATUS_W = 7
+
 
 def _normalize(data):
     """Map fields from teamclaude builds whose status JSON predates the
@@ -121,20 +140,99 @@ def load_status():
     return data
 
 
-def pct_color(frac):
-    if frac is None:
-        return DIM
-    if frac >= 0.9:
-        return RED
-    if frac >= 0.7:
-        return YELLOW
-    return GREEN
+def plan_label(acct):
+    """Billing-plan column ('Max 20x', 'Max 5x', 'Pro'), mirroring the TUI's
+    tierLabel: the rate_limit_tier multiplier first, then the plan flags."""
+    profile = acct.get("profile") or {}
+    tier = profile.get("rateLimitTier") or ""
+    multiplier = tier.rsplit("_", 1)[-1]
+    if multiplier.endswith("x") and multiplier[:-1].isdigit():
+        return f"Max {multiplier}"
+    if profile.get("hasClaudeMax") or profile.get("orgType") == "claude_max":
+        return "Max"
+    if profile.get("hasClaudePro") or profile.get("orgType") == "claude_pro":
+        return "Pro"
+    return tier.removeprefix("default_") or None
 
 
-def fmt_pct(frac):
-    if frac is None:
-        return f"{DIM}--{RESET}"
-    return f"{pct_color(frac)}{round(frac * 100)}%{RESET}"
+def fmt_renewal(acct, today=None):
+    """ESTIMATED next-billing countdown (D-8, D-DAY), mirroring the teamclaude
+    TUI: monthly billing renews on the subscription-creation day-of-month
+    (clamped to shorter months). Hidden when the subscription is not healthy —
+    the red status column already says billing is broken."""
+    profile = acct.get("profile") or {}
+    if profile.get("subscriptionStatus") not in (None, "active", "trialing"):
+        return None
+    created_iso = profile.get("subscriptionCreatedAt")
+    if not created_iso:
+        return None
+    try:
+        created = datetime.fromisoformat(str(created_iso).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if today is None:
+        today = date.today()
+    day = created.astimezone().day
+    year, month = today.year, today.month
+    clamp = lambda y, m: min(day, calendar.monthrange(y, m)[1])
+    candidate = date(year, month, clamp(year, month))
+    if candidate < today:
+        month += 1
+        if month > 12:
+            month, year = 1, year + 1
+        candidate = date(year, month, clamp(year, month))
+    days = (candidate - today).days
+    color = RED if days <= 3 else YELLOW if days <= 7 else GREEN
+    label = "D-DAY" if days <= 0 else f"D-{days}"
+    return f"{color}{label.rjust(5)}{RESET}"
+
+
+def _reset_ts(value):
+    """Reset value (epoch millis or ISO string) → epoch millis, else None."""
+    try:
+        if isinstance(value, (int, float)):
+            return value
+        return datetime.fromisoformat(
+            str(value).replace("Z", "+00:00")
+        ).timestamp() * 1000
+    except (TypeError, ValueError):
+        return None
+
+
+def pool_quota(accounts):
+    """Pool the fleet's quota the way the teamclaude TUI does: average
+    utilization over enabled, non-errored accounts (unmeasured windows are
+    skipped, not counted as zero), soonest reset per window. None for fewer
+    than two poolable accounts — the single row already is the total."""
+    pool = [
+        a for a in accounts
+        if not a.get("disabled") and a.get("status") != "error"
+    ]
+    if len(pool) < 2:
+        return None
+
+    def agg(value_key, reset_key):
+        vals, resets = [], []
+        for acct in pool:
+            q = acct.get("quota") or {}
+            v = q.get(value_key)
+            if v is None:
+                continue
+            vals.append(v)
+            ts = _reset_ts(q.get(reset_key))
+            if ts:
+                resets.append(ts)
+        if not vals:
+            return None, None
+        return sum(vals) / len(vals), (min(resets) if resets else None)
+
+    return {
+        "size": len(pool),
+        "off": len(accounts) - len(pool),
+        "five": agg("unified5h", "unified5hReset"),
+        "seven": agg("unified7d", "unified7dReset"),
+        "fable": agg("unified7dFable", "unified7dFableReset"),
+    }
 
 
 def fmt_reset(value):
@@ -154,7 +252,7 @@ def fmt_reset(value):
 def fmt_remaining(value, now=None):
     """Return a compact reset countdown such as 1d16h or 2h3m."""
     if not value:
-        return "--"
+        return None
     try:
         if isinstance(value, (int, float)):
             reset_at = value / 1000
@@ -176,19 +274,72 @@ def fmt_remaining(value, now=None):
             return f"{hours}h{minutes}m" if minutes else f"{hours}h"
         return f"{minutes}m"
     except (TypeError, ValueError, OSError, OverflowError):
-        return "--"
+        return None
 
 
-def fmt_window(label, usage, reset, now):
+def bar(ratio, reset, now, width=None):
+    """TUI-style quota gauge: `width` background-colored cells, filled
+    proportionally to usage (green <70%, yellow <90%, red beyond) over a gray
+    remainder, with 'usage% countdown' centered inside. No-data windows render
+    an all-gray bar. Without colors, degrades to the bracketed label."""
+    if width is None:
+        width = BAR_W
+    remaining = fmt_remaining(reset, now)
+
+    if ratio is None:
+        text = (remaining or "-")[:width].center(width)
+        return f"\033[100;37m{text}{RESET}" if COLOR else f"[{text}]"
+
+    ratio = max(0.0, min(1.0, ratio))
+    pct = f"{round(ratio * 100)}%"
+    label = (
+        f"{pct} {remaining}"
+        if remaining and len(pct) + 1 + len(remaining) <= width
+        else pct
+    )
+    text = label[:width].center(width)
+    if not COLOR:
+        return f"[{text}]"
+    filled = round(ratio * width)
+    bg = 42 if ratio < 0.7 else 43 if ratio < 0.9 else 41
+    out = ""
+    if filled:
+        out += f"\033[{bg};97m{text[:filled]}"
+    if filled < width:
+        out += f"\033[100;37m{text[filled:]}"
+    return out + RESET
+
+
+def bars_cell(q, now):
+    """The three aligned gauges of a row: 5h session, 7d overall, 7d model
+    (Fable, falling back to the Sonnet window when that is all there is)."""
+    model_seven = q.get("unified7dFable")
+    model_seven_reset = q.get("unified7dFableReset")
+    if model_seven is None and q.get("unified7dSonnet") is not None:
+        model_seven = q.get("unified7dSonnet")
+        model_seven_reset = q.get("unified7dSonnetReset")
     return (
-        f"{DIM}{label}{RESET} {fmt_pct(usage)} "
-        f"{DIM}↻{fmt_remaining(reset, now)}{RESET}"
+        f"{DIM}Ses{RESET} {bar(q.get('unified5h'), q.get('unified5hReset'), now)} "
+        f"{DIM}Wk{RESET} {bar(q.get('unified7d'), q.get('unified7dReset'), now)} "
+        f"{DIM}Fbl{RESET} {bar(model_seven, model_seven_reset, now)}"
     )
 
 
-def render_accounts(parts):
-    """Render the model and every account on separate lines."""
-    return "\n".join(parts)
+def status_cell(acct):
+    """Fixed-width status column: rate-limited stop marker first, then
+    disabled, then a non-active account state, then the subscription status
+    (red when billing is broken, green when active)."""
+    if acct.get("rateLimitedUntil"):
+        until = fmt_reset(acct["rateLimitedUntil"]) or ""
+        return f"{RED}{f'!{until}'[:STATUS_W].ljust(STATUS_W)}{RESET}"
+    if acct.get("disabled"):
+        return f"{DIM}{'off'.ljust(STATUS_W)}{RESET}"
+    if acct.get("status") not in (None, "active"):
+        return f"{YELLOW}{str(acct['status'])[:STATUS_W].ljust(STATUS_W)}{RESET}"
+    sub = (acct.get("profile") or {}).get("subscriptionStatus")
+    if sub and sub not in ("active", "trialing"):
+        return f"{RED}{sub[:STATUS_W].ljust(STATUS_W)}{RESET}"
+    return f"{GREEN}{'active'.ljust(STATUS_W)}{RESET}"
 
 
 def main():
@@ -219,64 +370,52 @@ def main():
             pinned_number = None
     except ValueError:
         pinned_number = None
-    switch_threshold = data.get("switchThreshold") or 0.98
     now = time.time()
-    for account_number, acct in enumerate(data.get("accounts", []), 1):
-        name = acct.get("name", "?")
-        numbered_name = f"{account_number} {name}"
+    accounts = data.get("accounts", [])
+
+    pooled = pool_quota(accounts)
+    if pooled:
+        size = f"x{pooled['size']}" + (
+            f" +{pooled['off']} off" if pooled["off"] else ""
+        )
+        # The gutter is wrapped in ANSI codes so the raw line does not begin
+        # with whitespace — Claude Code trims leading spaces off status-line
+        # rows, which would shift the FLEET row out of column.
+        parts.append(
+            f"{DIM}     {RESET}{BOLD}{'FLEET'.ljust(NAME_W)}{RESET} "
+            f"{DIM}{size.ljust(PLAN_W)}{RESET} "
+            f"{DIM}{'pooled'.ljust(STATUS_W)}{RESET} "
+            f"{DIM}Ses{RESET} {bar(*pooled['five'], now)} "
+            f"{DIM}Wk{RESET} {bar(*pooled['seven'], now)} "
+            f"{DIM}Fbl{RESET} {bar(*pooled['fable'], now)}"
+        )
+
+    for account_number, acct in enumerate(accounts, 1):
+        name = (acct.get("name") or "?")[:NAME_W]
         is_current = (
             account_number == pinned_number
             if pinned_number is not None
             else acct.get("name") == current
         )
-        marker = f"{CYAN}▶{RESET}" if is_current else ""
-        label = (
-            f"{BOLD}{numbered_name}{RESET}"
+        # Same trim guard as the FLEET gutter for the blank marker cell.
+        marker = f"{CYAN}>{RESET}" if is_current else f"{DIM} {RESET}"
+        name_cell = (
+            f"{BOLD}{name.ljust(NAME_W)}{RESET}"
             if is_current
-            else f"{DIM}{numbered_name}{RESET}"
+            else f"{DIM}{name.ljust(NAME_W)}{RESET}"
         )
-        q = acct.get("quota") or {}
-        five = q.get("unified5h")
-        five_reset = q.get("unified5hReset")
-        seven = q.get("unified7d")
-        seven_reset = q.get("unified7dReset")
-        # Prefer the model-specific 7d bucket when the proxy reports one.
-        model_seven = q.get("unified7dFable")
-        model_seven_reset = q.get("unified7dFableReset")
-        model_label = "F"
-        if model_seven is None:
-            model_seven = q.get("unified7dSonnet")
-            model_seven_reset = q.get("unified7dSonnetReset")
-            model_label = "S"
-
-        if acct.get("disabled"):
-            parts.append(f"{marker}{label} {DIM}off{RESET}")
-            continue
-
-        badge = ""
-        if acct.get("rateLimitedUntil"):
-            until = fmt_reset(acct["rateLimitedUntil"])
-            badge = f" {RED}⛔{until or ''}{RESET}"
-        elif acct.get("status") not in (None, "active"):
-            badge = f" {YELLOW}{acct['status']}{RESET}"
-
-        if model_seven is not None and model_seven >= switch_threshold:
-            opus = fmt_pct(seven)
-            parts.append(
-                f"{marker}{label} {DIM}O{RESET} {opus} · "
-                f"{RED}{model_label}⛔{RESET} "
-                f"{DIM}↻{fmt_remaining(model_seven_reset, now)}{RESET}{badge}"
-            )
-            continue
-        parts.append(
-            f"{marker}{label} {DIM}[{RESET}"
-            f"{fmt_window('5h', five, five_reset, now)} · "
-            f"{fmt_window('O', seven, seven_reset, now)} · "
-            f"{fmt_window(model_label, model_seven, model_seven_reset, now)}"
-            f"{DIM}]{RESET}{badge}"
+        plan = (plan_label(acct) or "")[:PLAN_W]
+        row = (
+            f"{marker}{DIM}{account_number:>2}.{RESET} {name_cell} "
+            f"{DIM}{plan.ljust(PLAN_W)}{RESET} {status_cell(acct)} "
+            f"{bars_cell(acct.get('quota') or {}, now)}"
         )
+        renewal = fmt_renewal(acct)
+        if renewal:
+            row += f" {renewal}"
+        parts.append(row)
 
-    print(render_accounts(parts))
+    print("\n".join(parts))
 
 
 if __name__ == "__main__":
