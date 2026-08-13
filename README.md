@@ -1,5 +1,112 @@
 # teamclaude-statusline
 
+한국어 · [English](#english)
+
+[teamclaude](https://github.com/jung-wan-kim/teamclaude) 다계정 Claude 프록시의 계정별 사용량을 Claude Code 상태줄에 실시간으로 표시합니다.
+
+```
+Fable 5
+     FLEET         x4      pooled  Ses [   7% 6m    ] Wk [ 11% 6h10m  ] Fbl [ 37% 6h10m  ]
+  1. alice@exampl  Max 20x active  Ses [  0% 1h30m  ] Wk [ 14% 1d14h  ] Fbl [ 27% 1d14h  ]   D-8
+> 2. bob@example.  Max 20x active  Ses [  27% 5m    ] Wk [  8% 6h10m  ] Fbl [ 15% 6h10m  ]  D-25
+  3. carol@exampl  Max 20x active  Ses [  0% 3h40m  ] Wk [     -      ] Fbl [ 97% 2d16h  ]   D-9
+```
+
+teamclaude TUI를 그대로 미러링한 대시보드입니다. 최상단 `FLEET` 줄은 TUI와 같은 방식으로 활성 계정들을 풀링합니다(창별 평균 사용률, 가장 빠른 리셋 시각, 비활성 계정이 제외되면 `+N off` 표기). 각 계정 줄에는 요금제(`Max 20x` / `Pro`), 상태 컬럼, 세 개의 쿼터 게이지 — `Ses` 5시간 세션, `Wk` 전체 7일, `Fbl` 모델별 7일(Fable, 해당 창이 없으면 Sonnet 창) — 이 `사용률% 리셋까지-남은-시간` 형태로 표시되고, 오른쪽 끝에 예상 다음 결제일이 `D-N` 카운트다운으로 붙습니다(TUI와 동일하게 구독 생성일의 월 단위 기념일로 추정, 3일 이하 빨강·7일 이하 노랑, 구독에 문제가 있으면 D-day 대신 상태 컬럼이 빨간색으로 바뀜).
+
+컬러 터미널에서는 게이지가 사용률만큼 배경색이 채워진 막대로 그려집니다(위 예시의 대괄호는 `NO_COLOR` 폴백 표기). 회색 `-` 막대는 teamclaude가 해당 창을 보고하지 않았다는 뜻입니다. 모호폭 문자(`▶ × ⛔`)가 2칸을 차지하는 CJK 터미널에서도 칸이 어긋나지 않도록 모든 표시는 ASCII만 사용합니다.
+
+- `>` — 현재 요청을 처리 중인 계정
+- 상태 컬럼의 `!HH:MM` — 해당 시각까지 레이트리밋에 걸린 계정
+- `off` — 로테이션에서 제외된 계정
+- 막대 색상: 초록 < 70% < 노랑 < 90% < 빨강
+- `TC down` — 프록시가 실행 중이 아님, `teamclaude not installed` — CLI가 설치되지 않음
+
+## 요구 사항
+
+- [teamclaude](https://github.com/jung-wan-kim/teamclaude) 설치·실행 — active warm-up과 `restart` 명령이 있는 [jung-wan-kim/teamclaude](https://github.com/jung-wan-kim/teamclaude) 포크를 권장합니다(`npm install -g github:jung-wan-kim/teamclaude`). npm 원본 [@karpeleslab/teamclaude](https://www.npmjs.com/package/@karpeleslab/teamclaude)(`npm install -g @karpeleslab/teamclaude`)도 동작합니다
+- Claude Code
+- `python3` (표준 라이브러리만 사용, 3.8+)
+
+상태줄을 설치하기 전에 계정을 하나 이상 추가하세요:
+
+```sh
+teamclaude login       # 브라우저 OAuth
+# 또는: teamclaude import
+# 또는: teamclaude login --api
+```
+
+TeamClaude가 없거나 계정이 없으면 설치 스크립트는 Claude 설정을 건드리지 않고 중단합니다. 계정은 있는데 프록시가 꺼져 있으면 설치는 완료되고, 프록시를 시작하는 명령을 안내합니다.
+
+`status --json`이 없는 teamclaude 빌드(예: [jung-wan-kim/teamclaude](https://github.com/jung-wan-kim/teamclaude) 포크)에서도 동작합니다: 상태줄과 번호 선택기는 실행 중인 프록시의 `/teamclaude/status` HTTP 엔드포인트로 폴백하고 필드 이름을 정규화합니다(`modelWeekly` → 모델별 7일 창, `enabled` → `disabled`). 선택 기능인 쿼터 프로브만 `probe` 명령이 있는 빌드를 필요로 합니다.
+
+## 설치
+
+```sh
+curl -fsSL "https://raw.githubusercontent.com/cineraria01/teamclaude-statusline/main/install.sh?$(date +%s)" | bash
+```
+
+또는 클론해서:
+
+```sh
+git clone https://github.com/cineraria01/teamclaude-statusline
+cd teamclaude-statusline && ./install.sh
+```
+
+설치 스크립트는:
+
+1. TeamClaude 상태줄과 호환용 래퍼를 `~/.claude/`에 복사하고
+2. 래퍼를 `~/.claude/settings.json`의 `statusLine`으로 등록합니다(먼저 `settings.json.bak`으로 백업). Orca 같은 기존 상태줄은 보존되어 TeamClaude 위에 함께 표시됩니다
+3. 번호 계정 선택기를 설치하고 `~/.bashrc` 또는 `~/.zshrc`에서 불러오게 합니다(기존 alias·설정은 건드리지 않음)
+4. 유휴 계정의 쿼터가 최신으로 유지되도록 `teamclaude probe 300`을 켭니다 — 프로브는 사용량 엔드포인트를 읽기만 하며 **쿼터를 소모하지 않습니다** (`NO_PROBE=1`로 생략 가능)
+
+Claude Code를 재시작하면(또는 새 세션을 열면) 상태줄이 나타납니다.
+
+## 번호로 계정 선택
+
+계정 번호는 상태줄과 `teamclaude status`에 표시되는 위→아래 순서를 따릅니다:
+
+```sh
+claude       # 자동 로테이션
+claude 1     # 새 세션을 1번 계정에 고정
+claude 2 -c  # 2번 계정에 고정된 최근 세션 이어가기
+```
+
+선택기는 실행 시점에 실제 계정 목록을 읽으므로 이메일이 하드코딩되지 않습니다. `>`는 TeamClaude의 전역 자동 라우팅 포인터가 아니라 해당 Claude 세션에 고정된 번호를 따라갑니다. 실행 중인 Claude 세션은 계정을 바꿀 수 없으니, 원하는 번호로 세션을 새로 시작하거나 이어가세요.
+
+## 설정
+
+스크립트가 읽는 환경변수:
+
+| 변수 | 기본값 | 의미 |
+|---|---|---|
+| `TC_SL_CACHE_TTL` | `15` | `teamclaude status --json` 출력 캐시 시간(초) |
+| `TC_SL_CACHE_FILE` | `$TMPDIR/tc-statusline-cache-$UID.json` | 캐시 파일 경로 |
+| `TC_SL_BAR_WIDTH` | `12` | 쿼터 게이지 폭(문자 수, 최소 6) |
+| `NO_COLOR` | 미설정 | ANSI 색상 비활성화 ([no-color.org](https://no-color.org)) |
+
+설치 스크립트 전용 환경변수:
+
+| 변수 | 기본값 | 의미 |
+|---|---|---|
+| `CLAUDE_DIR` | `~/.claude` | Claude Code 설정 디렉터리 |
+| `TEAMCLAUDE_SHELL_RC` | Bash/Zsh rc 자동 감지 | 수정할 셸 rc 파일 |
+| `NO_PROBE` | 미설정 | `1`이면 `teamclaude probe 300` 생략 |
+
+갱신 주기(유휴 상태에서도 기본 30초)는 `~/.claude/settings.json`의 `statusLine.refreshInterval` 필드에 있습니다.
+
+## 제거
+
+```sh
+curl -fsSL "https://raw.githubusercontent.com/cineraria01/teamclaude-statusline/main/uninstall.sh?$(date +%s)" | bash
+```
+
+스크립트, 선택기 소스 블록, 자신이 등록한 `statusLine` 항목(여전히 이 스크립트를 가리키는 경우에만)을 제거합니다. 이전에 쓰던 상태줄은 복원되고, 기존 셸 alias·설정은 보존됩니다. 쿼터 프로브는 그대로 두며 `teamclaude probe off`로 끌 수 있습니다.
+
+---
+
+## English
+
 Live per-account quota usage for the [teamclaude](https://github.com/jung-wan-kim/teamclaude) multi-account Claude proxy, right in your Claude Code status line.
 
 ```
@@ -31,7 +138,7 @@ occupy two cells.
 - bar colors: green < 70% < yellow < 90% < red
 - `TC down` — the proxy isn't running; `teamclaude not installed` — the CLI is missing
 
-## Requirements
+### Requirements
 
 - [teamclaude](https://github.com/jung-wan-kim/teamclaude) installed and running — recommended: the [jung-wan-kim/teamclaude](https://github.com/jung-wan-kim/teamclaude) fork with active warm-up and `restart` (`npm install -g github:jung-wan-kim/teamclaude`); the npm original [@karpeleslab/teamclaude](https://www.npmjs.com/package/@karpeleslab/teamclaude) (`npm install -g @karpeleslab/teamclaude`) also works
 - Claude Code
@@ -49,7 +156,7 @@ The installer stops without changing Claude settings when TeamClaude is missing 
 
 teamclaude builds without `status --json` (e.g. the [jung-wan-kim/teamclaude](https://github.com/jung-wan-kim/teamclaude) fork) also work: the status line and the numbered selector fall back to the running proxy's `/teamclaude/status` HTTP endpoint and normalize its field names (`modelWeekly` → model 7d bucket, `enabled` → `disabled`). Only the optional quota probe requires a build with the `probe` command.
 
-## Install
+### Install
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/cineraria01/teamclaude-statusline/main/install.sh?$(date +%s)" | bash
@@ -71,7 +178,7 @@ The installer:
 
 Restart Claude Code (or start a new session) and the status line appears.
 
-## Numbered account selection
+### Numbered account selection
 
 Account numbers follow the top-to-bottom order shown in the status line and `teamclaude status`:
 
@@ -83,7 +190,7 @@ claude 2 -c  # continue the latest session pinned to account 2
 
 The selector resolves the live account list at launch time, so it contains no hardcoded emails. `>` follows the number pinned for that Claude session instead of TeamClaude's global automatic-route pointer. A running Claude session cannot change accounts in place; start or resume a session with the desired number.
 
-## Configuration
+### Configuration
 
 Environment variables read by the script:
 
@@ -104,17 +211,13 @@ Installer-only environment variables:
 
 The refresh interval (default 30s even when idle) lives in the `statusLine.refreshInterval` field of `~/.claude/settings.json`.
 
-## Uninstall
+### Uninstall
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/cineraria01/teamclaude-statusline/main/uninstall.sh?$(date +%s)" | bash
 ```
 
 Removes the scripts, selector source block, and the `statusLine` entry it registered (only if it still points at this script). A previously configured status line is restored, and existing shell aliases/settings are preserved. The quota probe is left as-is; `teamclaude probe off` disables it.
-
-## 한국어 안내
-
-teamclaude는 [jung-wan-kim/teamclaude](https://github.com/jung-wan-kim/teamclaude) 포크 설치를 권장합니다(`npm install -g github:jung-wan-kim/teamclaude` — active warm-up과 `restart` 명령 포함). 이 상태줄은 그 다계정 프록시의 계정별 사용량과 갱신까지 남은 시간(5시간·전체 7일·모델별 7일 쿼터), 요금제, 예상 결제일 D-day를 teamclaude TUI와 같은 막대 대시보드 형태로 Claude Code 상태줄에 상시 표시합니다. 최상단 `FLEET` 줄은 활성 계정 전체의 평균 사용률과 가장 빠른 리셋 시각입니다. 위의 원라인 설치 명령을 실행한 뒤 Claude Code를 재시작하면 됩니다. `>`는 현재 라우팅 중인 계정, 상태 칸의 `!시각`은 레이트리밋 해제 시각입니다(CJK 터미널에서 칸이 밀리지 않도록 모든 표시는 ASCII만 사용합니다). `claude 1`, `claude 2`처럼 상태줄 순서의 계정을 선택할 수 있고, 번호는 실행 시점의 실제 계정 목록에서 읽습니다. 설치 스크립트는 기존 Claude·셸 설정을 백업하고 자신이 추가한 항목만 관리합니다.
 
 ## License
 
