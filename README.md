@@ -99,6 +99,16 @@ accounts` 순서다. (계정이 바뀌면 프롬프트 캐시는 새로 쌓인�
   한 번으로 재적용됩니다 (`--check` 적용 확인 · `--revert` 원복).
 - 적용/원복 후 한 번만 `teamclaude restart`가 필요합니다.
 
+## 자동 업데이트
+
+설치하면 그대로 자동 업데이트됩니다. 상태줄 래퍼가 **하루에 한 번** 백그라운드에서
+GitHub `main`의 최신 커밋을 확인하고, 설치본과 다를 때만 `install.sh`를 다시 실행합니다.
+
+- 확인·설치는 상태줄 렌더와 완전히 분리된 백그라운드 프로세스라 표시 지연이 없고,
+  실패(오프라인 등)는 조용히 넘어가 다음 날 다시 시도합니다.
+- 기록은 `~/.claude/teamclaude-statusline-update.log`에 남습니다.
+- 끄려면 `~/.claude/teamclaude-statusline-config.json`에 `"autoUpdate": false`를 추가하세요.
+
 ## 설정
 
 스크립트가 읽는 환경변수:
@@ -244,6 +254,15 @@ cache re-warms on the new account.)
   `~/.claude/teamclaude-patches/teamclaude-reload-patch.sh` once
   (`--check` to inspect, `--revert` to restore stock sources).
 - One `teamclaude restart` is needed after apply/revert.
+
+### Auto-update
+
+Once installed, it keeps itself up to date. The status-line wrapper checks the
+latest commit on GitHub `main` **once a day** in a detached background process
+and re-runs `install.sh` only when it differs from the installed commit.
+Failures (offline, rate limits) are silent and retried the next day; activity
+is logged to `~/.claude/teamclaude-statusline-update.log`. Opt out by adding
+`"autoUpdate": false` to `~/.claude/teamclaude-statusline-config.json`.
 
 ### Configuration
 

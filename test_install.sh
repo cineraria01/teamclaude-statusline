@@ -45,6 +45,8 @@ test "$first_rc_checksum" = "$(cksum < "$TEST_HOME/.bashrc")"
 test -x "$TEST_HOME/.claude/statusline-teamclaude.py"
 test -x "$TEST_HOME/.claude/statusline-wrapper.py"
 test -r "$TEST_HOME/.claude/teamclaude-selector.sh"
+test -x "$TEST_HOME/.claude/statusline-autoupdate.sh"
+test -s "$TEST_HOME/.claude/teamclaude-statusline-installed-sha"
 test "$(grep -c '^# >>> teamclaude-statusline selector >>>$' "$TEST_HOME/.bashrc")" -eq 1
 grep -q '^export KEEP_ME=1$' "$TEST_HOME/.bashrc"
 python3 - "$TEST_HOME/.claude/settings.json" <<'PY'

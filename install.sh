@@ -16,6 +16,8 @@ CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
 SCRIPT_DEST="$CLAUDE_DIR/statusline-teamclaude.py"
 WRAPPER_DEST="$CLAUDE_DIR/statusline-wrapper.py"
 SELECTOR_DEST="$CLAUDE_DIR/teamclaude-selector.sh"
+AUTOUPDATE_DEST="$CLAUDE_DIR/statusline-autoupdate.sh"
+SHA_DEST="$CLAUDE_DIR/teamclaude-statusline-installed-sha"
 CONFIG_DEST="$CLAUDE_DIR/teamclaude-statusline-config.json"
 SETTINGS="$CLAUDE_DIR/settings.json"
 
@@ -63,8 +65,20 @@ install_asset() {
 install_asset statusline-teamclaude.py "$SCRIPT_DEST"
 install_asset statusline-wrapper.py "$WRAPPER_DEST"
 install_asset teamclaude-selector.sh "$SELECTOR_DEST"
-chmod +x "$SCRIPT_DEST" "$WRAPPER_DEST"
+install_asset statusline-autoupdate.sh "$AUTOUPDATE_DEST"
+chmod +x "$SCRIPT_DEST" "$WRAPPER_DEST" "$AUTOUPDATE_DEST"
 chmod 644 "$SELECTOR_DEST"
+
+# Record the installed commit so the self-updater reinstalls only on change.
+# Best-effort: without a SHA the updater just reinstalls once and records it.
+INSTALLED_SHA=""
+if [ -n "$SRC_DIR" ] && command -v git >/dev/null 2>&1; then
+  INSTALLED_SHA=$(git -C "$SRC_DIR" rev-parse HEAD 2>/dev/null || true)
+fi
+if [ -z "$INSTALLED_SHA" ] && command -v git >/dev/null 2>&1; then
+  INSTALLED_SHA=$(git ls-remote "https://github.com/cineraria01/teamclaude-statusline" HEAD 2>/dev/null | cut -f1 || true)
+fi
+[ -n "$INSTALLED_SHA" ] && echo "$INSTALLED_SHA" > "$SHA_DEST"
 
 # Preserve any existing status line, then register the combined wrapper.
 python3 - "$SETTINGS" "$SCRIPT_DEST" "$WRAPPER_DEST" "$CONFIG_DEST" <<'PY'

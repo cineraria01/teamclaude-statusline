@@ -7,6 +7,7 @@ CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
 SCRIPT_DEST="$CLAUDE_DIR/statusline-teamclaude.py"
 WRAPPER_DEST="$CLAUDE_DIR/statusline-wrapper.py"
 SELECTOR_DEST="$CLAUDE_DIR/teamclaude-selector.sh"
+AUTOUPDATE_DEST="$CLAUDE_DIR/statusline-autoupdate.sh"
 CONFIG_DEST="$CLAUDE_DIR/teamclaude-statusline-config.json"
 SETTINGS="$CLAUDE_DIR/settings.json"
 
@@ -76,6 +77,11 @@ if [ -x "$PATCHES_DIR/teamclaude-reload-patch.sh" ]; then
   rm -rf "$PATCHES_DIR"
 fi
 
-rm -f "$SCRIPT_DEST" "$WRAPPER_DEST" "$SELECTOR_DEST" "$CONFIG_DEST"
+rm -f "$SCRIPT_DEST" "$WRAPPER_DEST" "$SELECTOR_DEST" "$CONFIG_DEST" \
+  "$AUTOUPDATE_DEST" \
+  "$CLAUDE_DIR/teamclaude-statusline-installed-sha" \
+  "$CLAUDE_DIR/teamclaude-statusline-update-stamp" \
+  "$CLAUDE_DIR/teamclaude-statusline-update.log"
+rmdir "$CLAUDE_DIR/.teamclaude-statusline-update.lock" 2>/dev/null || true
 echo "Removed TeamClaude status line files from $CLAUDE_DIR"
 echo "Note: 'teamclaude probe' was left as-is; run 'teamclaude probe off' if you want it off."
