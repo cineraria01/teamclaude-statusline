@@ -68,6 +68,14 @@ if start >= 0 and finish >= 0:
 PY
 done
 
+# Revert the live-reload patch on @karpeleslab/teamclaude, if we applied it.
+PATCHES_DIR="$CLAUDE_DIR/teamclaude-patches"
+if [ -x "$PATCHES_DIR/teamclaude-reload-patch.sh" ]; then
+  "$PATCHES_DIR/teamclaude-reload-patch.sh" --revert \
+    || echo "note: live-reload patch not reverted (already gone, or backup missing); 'npm install -g @karpeleslab/teamclaude' restores stock sources" >&2
+  rm -rf "$PATCHES_DIR"
+fi
+
 rm -f "$SCRIPT_DEST" "$WRAPPER_DEST" "$SELECTOR_DEST" "$CONFIG_DEST"
 echo "Removed TeamClaude status line files from $CLAUDE_DIR"
 echo "Note: 'teamclaude probe' was left as-is; run 'teamclaude probe off' if you want it off."

@@ -7,6 +7,8 @@
 #   CLAUDE_DIR               Claude Code config dir (default: ~/.claude)
 #   TEAMCLAUDE_SHELL_RC      shell rc file override (default: ~/.bashrc or ~/.zshrc)
 #   NO_PROBE=1               skip enabling `teamclaude probe 300`
+#   NO_RELOAD_PATCH=1        skip patching @karpeleslab/teamclaude with the
+#                            live-reload commands (see teamclaude-reload-patch.sh)
 set -euo pipefail
 
 REPO_RAW="https://raw.githubusercontent.com/cineraria01/teamclaude-statusline/main"
@@ -164,6 +166,22 @@ fi
 # It only reads the usage endpoint and does not spend quota.
 if [ -z "${NO_PROBE:-}" ]; then
   teamclaude probe 300 || echo "warning: could not enable probe (proxy stopped, or this teamclaude build lacks the probe command; quota still refreshes as requests flow)" >&2
+fi
+
+# Live-reload patch for @karpeleslab/teamclaude: adds `teamclaude reload` and
+# makes enable/disable/priority apply to the running server without a restart.
+# Assets land in ~/.claude/teamclaude-patches/ so the patch can be re-applied
+# after `npm update -g` overwrites the package. Skips itself when the build
+# already has the endpoint (a fork, or a future upstream) or on NO_RELOAD_PATCH=1.
+PATCHES_DIR="$CLAUDE_DIR/teamclaude-patches"
+if [ -z "${NO_RELOAD_PATCH:-}" ]; then
+  mkdir -p "$PATCHES_DIR"
+  install_asset teamclaude-reload-patch.sh "$PATCHES_DIR/teamclaude-reload-patch.sh"
+  install_asset patches/reload-endpoint.server.js.patch "$PATCHES_DIR/reload-endpoint.server.js.patch"
+  install_asset patches/reload-endpoint.index.js.patch "$PATCHES_DIR/reload-endpoint.index.js.patch"
+  chmod +x "$PATCHES_DIR/teamclaude-reload-patch.sh"
+  "$PATCHES_DIR/teamclaude-reload-patch.sh" \
+    || echo "warning: live-reload patch not applied; account changes need 'teamclaude restart' as before" >&2
 fi
 
 echo

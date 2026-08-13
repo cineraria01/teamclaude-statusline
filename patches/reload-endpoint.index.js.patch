@@ -1,0 +1,109 @@
+--- a/src/index.js
++++ b/src/index.js
+@@ -22,6 +22,10 @@
+     break;
+   case 'restart':
+     await restartCommand();
++    break;
++  case 'reload':
++    await reloadCommand();
++    process.exit(0);
+     break;
+   case 'run':
+     await runCommand();
+@@ -254,6 +258,21 @@
+   }
+ 
+   const server = createProxyServer(accountManager, config, hooks);
++  // [local patch: reload-endpoint] Expose the TUI "R" reload as a server hook so
++  // `teamclaude reload` can apply disk-config changes to a headless server
++  // without a restart. Assigned after createProxyServer on purpose: the server
++  // captured the same `hooks` object, and `server.refreshQuotaAll` only exists
++  // once the server is constructed. Mirrors tui.js _doSync (sync first, then
++  // re-measure quota with just-refreshed credentials).
++  hooks.reload = async () => {
++    const diskConfig = await loadConfig();
++    let added = 0;
++    if (diskConfig) added = await syncAccountsFromDisk(diskConfig, config, accountManager);
++    let quotaProbed = null;
++    try { quotaProbed = await server.refreshQuotaAll(); } catch { /* best-effort */ }
++    console.log(`[TeamClaude] Config reloaded via /teamclaude/reload (${added} new account(s))`);
++    return { added, accounts: accountManager.accounts.length, quotaProbed };
++  };
+   // Restore the last run's committed probe template alongside the quota
+   // snapshot, so forced re-measure (TUI R) and warm-up probes work on a
+   // freshly restarted idle proxy — without this the template is memory-only
+@@ -938,11 +957,63 @@
+ }
+ 
+ // ── enable / disable / priority ─────────────────────────────
++
++// [local patch: reload-endpoint] Apply disk-config changes to a running server
++// in place, via POST /teamclaude/reload. Returns true when a server handled it.
++async function requestServerReload(config) {
++  const running = await findRunningServer(config);
++  if (!running) return { state: 'not-running' };
++  let res;
++  try {
++    res = await fetch(`http://127.0.0.1:${running.port}/teamclaude/reload`, { method: 'POST' });
++  } catch (err) {
++    return { state: 'unreachable', detail: err.message };
++  }
++  if (res.status === 404) return { state: 'unsupported' }; // server predates the patch
++  if (!res.ok) return { state: 'failed', detail: `HTTP ${res.status}` };
++  const body = await res.json().catch(() => ({}));
++  return { state: 'ok', body };
++}
++
++async function reloadCommand() {
++  const config = await loadConfig();
++  if (!config) { console.error('No config found.'); process.exit(1); }
++  const r = await requestServerReload(config);
++  switch (r.state) {
++    case 'not-running':
++      console.log('No running server — nothing to reload (start one with: teamclaude server).');
++      return;
++    case 'unsupported':
++      console.error('The running server predates the reload endpoint — restart once: teamclaude restart');
++      process.exit(1);
++      break;
++    case 'unreachable':
++    case 'failed':
++      console.error(`Reload failed: ${r.detail}`);
++      process.exit(1);
++      break;
++    case 'ok': {
++      const added = r.body?.added || 0;
++      console.log(added > 0
++        ? `Reloaded config — picked up ${added} new account(s).`
++        : 'Reloaded config — enable/disable/priority/credential changes applied.');
++      if (r.body?.quotaProbed === -1 || r.body?.quotaProbed == null) {
++        console.log('  (quota re-measure skipped — no request has flowed through the proxy yet)');
++      }
++      return;
++    }
++  }
++}
+ 
+ /** Note that changes apply to a running server only after a reload/restart. */
+ function noteRunningServerReload(config) {
+-  return findRunningServer(config).then(running => {
+-    if (running) {
++  // [local patch: reload-endpoint] Instead of telling the user to restart, apply
++  // the change to the running server right away. Falls back to the old hint when
++  // the running server doesn't have the endpoint (pre-patch process).
++  return requestServerReload(config).then(r => {
++    if (r.state === 'ok') {
++      console.log('Applied to the running server (no restart needed).');
++    } else if (r.state !== 'not-running') {
+       console.log('A server is running — apply now with: teamclaude restart');
+       console.log('  (or press "R" in the TUI to reload from config).');
+     }
+@@ -1008,6 +1079,7 @@
+   server              Start the proxy server (default)
+   stop                Stop the running proxy server
+   restart             Stop the running server (if any) and start a fresh one
++  reload              Apply config changes to the running server (no restart)
+   import              Import credentials from Claude Code
+   login               OAuth login via browser
+   login --api         Add an API key account

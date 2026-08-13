@@ -74,6 +74,25 @@ claude 2 -c  # 2번 계정에 고정된 최근 세션 이어가기
 
 선택기는 실행 시점에 실제 계정 목록을 읽으므로 이메일이 하드코딩되지 않습니다. `>`는 TeamClaude의 전역 자동 라우팅 포인터가 아니라 해당 Claude 세션에 고정된 번호를 따라갑니다. 실행 중인 Claude 세션은 계정을 바꿀 수 없으니, 원하는 번호로 세션을 새로 시작하거나 이어가세요.
 
+## 재시작 없는 계정 전환 (라이브 리로드 패치)
+
+npm 원본(`@karpeleslab/teamclaude`)은 headless 서버에 설정 변경을 반영할 방법이
+재시작뿐입니다 — 리로드 로직은 있지만 TUI의 `R` 키에서만 닿습니다. 설치 스크립트가
+그 배선만 뚫는 작은 패치를 함께 적용합니다 (새 로직 없음, 1.4.2 기준):
+
+```sh
+teamclaude disable some@account.com   # → "Applied to the running server (no restart needed)"
+teamclaude priority main@account.com 1  # 즉시 반영
+teamclaude reload                     # 설정 파일을 직접 고친 뒤 수동 반영
+```
+
+- 적용 대상은 `@karpeleslab/teamclaude`뿐이며, 이미 리로드가 있는 빌드(포크 등)는
+  자동으로 건너뜁니다. `NO_RELOAD_PATCH=1`로 끌 수 있습니다.
+- 패치 파일은 `~/.claude/teamclaude-patches/`에 남습니다. `npm update -g`가
+  패키지를 덮어쓰면 `~/.claude/teamclaude-patches/teamclaude-reload-patch.sh`
+  한 번으로 재적용됩니다 (`--check` 적용 확인 · `--revert` 원복).
+- 적용/원복 후 한 번만 `teamclaude restart`가 필요합니다.
+
 ## 설정
 
 스크립트가 읽는 환경변수:
@@ -92,6 +111,7 @@ claude 2 -c  # 2번 계정에 고정된 최근 세션 이어가기
 | `CLAUDE_DIR` | `~/.claude` | Claude Code 설정 디렉터리 |
 | `TEAMCLAUDE_SHELL_RC` | Bash/Zsh rc 자동 감지 | 수정할 셸 rc 파일 |
 | `NO_PROBE` | 미설정 | `1`이면 `teamclaude probe 300` 생략 |
+| `NO_RELOAD_PATCH` | 미설정 | `1`이면 라이브 리로드 패치 생략 |
 
 갱신 주기(유휴 상태에서도 기본 30초)는 `~/.claude/settings.json`의 `statusLine.refreshInterval` 필드에 있습니다.
 
@@ -101,7 +121,7 @@ claude 2 -c  # 2번 계정에 고정된 최근 세션 이어가기
 curl -fsSL "https://raw.githubusercontent.com/cineraria01/teamclaude-statusline/main/uninstall.sh?$(date +%s)" | bash
 ```
 
-스크립트, 선택기 소스 블록, 자신이 등록한 `statusLine` 항목(여전히 이 스크립트를 가리키는 경우에만)을 제거합니다. 이전에 쓰던 상태줄은 복원되고, 기존 셸 alias·설정은 보존됩니다. 쿼터 프로브는 그대로 두며 `teamclaude probe off`로 끌 수 있습니다.
+스크립트, 선택기 소스 블록, 자신이 등록한 `statusLine` 항목(여전히 이 스크립트를 가리키는 경우에만)을 제거합니다. 이전에 쓰던 상태줄은 복원되고, 기존 셸 alias·설정은 보존됩니다. 라이브 리로드 패치도 백업으로 원복합니다. 쿼터 프로브는 그대로 두며 `teamclaude probe off`로 끌 수 있습니다.
 
 ---
 
@@ -190,6 +210,28 @@ claude 2 -c  # continue the latest session pinned to account 2
 
 The selector resolves the live account list at launch time, so it contains no hardcoded emails. `>` follows the number pinned for that Claude session instead of TeamClaude's global automatic-route pointer. A running Claude session cannot change accounts in place; start or resume a session with the desired number.
 
+### Account switching without a restart (live-reload patch)
+
+The upstream npm package (`@karpeleslab/teamclaude`) can only apply config
+changes to a headless server via a full restart — the reload logic exists, but
+only the TUI "R" key reaches it. The installer applies a small patch that wires
+it up (no new logic; written against 1.4.2):
+
+```sh
+teamclaude disable some@account.com     # → "Applied to the running server (no restart needed)"
+teamclaude priority main@account.com 1  # instant
+teamclaude reload                       # manual apply after editing the config file
+```
+
+- Only `@karpeleslab/teamclaude` is patched; builds that already have a reload
+  (forks, or a future upstream) are skipped automatically. Opt out with
+  `NO_RELOAD_PATCH=1`.
+- Patch files stay in `~/.claude/teamclaude-patches/`. When `npm update -g`
+  overwrites the package, re-run
+  `~/.claude/teamclaude-patches/teamclaude-reload-patch.sh` once
+  (`--check` to inspect, `--revert` to restore stock sources).
+- One `teamclaude restart` is needed after apply/revert.
+
 ### Configuration
 
 Environment variables read by the script:
@@ -208,6 +250,7 @@ Installer-only environment variables:
 | `CLAUDE_DIR` | `~/.claude` | Claude Code config directory |
 | `TEAMCLAUDE_SHELL_RC` | detected Bash/Zsh rc | shell rc file to update |
 | `NO_PROBE` | unset | set to `1` to skip `teamclaude probe 300` |
+| `NO_RELOAD_PATCH` | unset | set to `1` to skip the live-reload patch |
 
 The refresh interval (default 30s even when idle) lives in the `statusLine.refreshInterval` field of `~/.claude/settings.json`.
 
@@ -217,7 +260,7 @@ The refresh interval (default 30s even when idle) lives in the `statusLine.refre
 curl -fsSL "https://raw.githubusercontent.com/cineraria01/teamclaude-statusline/main/uninstall.sh?$(date +%s)" | bash
 ```
 
-Removes the scripts, selector source block, and the `statusLine` entry it registered (only if it still points at this script). A previously configured status line is restored, and existing shell aliases/settings are preserved. The quota probe is left as-is; `teamclaude probe off` disables it.
+Removes the scripts, selector source block, and the `statusLine` entry it registered (only if it still points at this script). A previously configured status line is restored, and existing shell aliases/settings are preserved. The live-reload patch is reverted from its backup. The quota probe is left as-is; `teamclaude probe off` disables it.
 
 ## License
 
