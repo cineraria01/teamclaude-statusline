@@ -374,16 +374,21 @@ def main():
     accounts = data.get("accounts", [])
 
     pooled = pool_quota(accounts)
+    # The plan column must fit the FLEET size label ("x3 +1 off" is wider
+    # than "Max 20x") — ljust never truncates, so a fixed width would shift
+    # the FLEET row out of column whenever an account is off.
+    plan_w = PLAN_W
     if pooled:
         size = f"x{pooled['size']}" + (
             f" +{pooled['off']} off" if pooled["off"] else ""
         )
+        plan_w = max(plan_w, len(size))
         # The gutter is wrapped in ANSI codes so the raw line does not begin
         # with whitespace — Claude Code trims leading spaces off status-line
         # rows, which would shift the FLEET row out of column.
         parts.append(
             f"{DIM}     {RESET}{BOLD}{'FLEET'.ljust(NAME_W)}{RESET} "
-            f"{DIM}{size.ljust(PLAN_W)}{RESET} "
+            f"{DIM}{size.ljust(plan_w)}{RESET} "
             f"{DIM}{'pooled'.ljust(STATUS_W)}{RESET} "
             f"{DIM}Ses{RESET} {bar(*pooled['five'], now)} "
             f"{DIM}Wk{RESET} {bar(*pooled['seven'], now)} "
@@ -404,10 +409,10 @@ def main():
             if is_current
             else f"{DIM}{name.ljust(NAME_W)}{RESET}"
         )
-        plan = (plan_label(acct) or "")[:PLAN_W]
+        plan = (plan_label(acct) or "")[:plan_w]
         row = (
             f"{marker}{DIM}{account_number:>2}.{RESET} {name_cell} "
-            f"{DIM}{plan.ljust(PLAN_W)}{RESET} {status_cell(acct)} "
+            f"{DIM}{plan.ljust(plan_w)}{RESET} {status_cell(acct)} "
             f"{bars_cell(acct.get('quota') or {}, now)}"
         )
         renewal = fmt_renewal(acct)

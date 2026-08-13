@@ -132,3 +132,23 @@ assert lines[2].startswith("> 1. one@example.c")
 assert lines[3].startswith("  2. two@example.c")
 # Column alignment: every dashboard row places its gauges at the same offset.
 assert len({line.index("Ses") for line in lines[1:]}) == 1
+
+# Regression: an off account widens the FLEET size label ("x2 +1 off") past
+# the fixed plan column ("Max 20x"), and ljust never truncates — the plan
+# column must stretch to fit or the FLEET row shifts out of column.
+statusline.load_status = lambda: {
+    "currentAccount": "one@example.com",
+    "accounts": [
+        {"name": "one@example.com", "quota": {}},
+        {"name": "two@example.com", "quota": {}},
+        {"name": "off@example.com", "disabled": True, "quota": {}},
+    ],
+}
+sys.stdin = io.StringIO("{}")
+output = io.StringIO()
+sys.stdout = output
+statusline.main()
+sys.stdout = sys.__stdout__
+lines = output.getvalue().splitlines()
+assert "+1 off" in lines[0]
+assert len({line.index("Ses") for line in lines}) == 1
