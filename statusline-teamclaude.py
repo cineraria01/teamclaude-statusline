@@ -29,6 +29,9 @@ Configuration (environment variables):
     TC_SL_CACHE_TTL   seconds to cache `teamclaude status` output (default 15)
     TC_SL_CACHE_FILE  cache file path (default: $TMPDIR/tc-statusline-cache-$UID.json)
     TC_SL_BAR_WIDTH   width of each quota bar in characters (default 12)
+    TC_SL_ROW_COLORS  per-account-row accent colors as comma-separated ANSI
+                      SGR codes, cycled (default "36,32,33,35,34,91"; empty
+                      restores single-tone rows)
     NO_COLOR          disable ANSI colors when set (https://no-color.org)
 """
 
@@ -69,6 +72,25 @@ else:
 NAME_W = 13
 PLAN_W = 7   # "Max 20x"
 STATUS_W = 7
+
+# Per-row accent colors: account rows cycle through this palette so each
+# line reads in a distinct color. Override with TC_SL_ROW_COLORS
+# (comma-separated ANSI SGR codes, e.g. "36,32,33,35,34,31"); set it empty
+# to fall back to the old single-tone (DIM) rows. Semantic colors (gauge
+# green/yellow/red, status, D-day) are untouched.
+if COLOR:
+    _row_codes = os.environ.get("TC_SL_ROW_COLORS", "36,32,33,35,34,91")
+    ROW_COLORS = [
+        f"\033[{c.strip()}m" for c in _row_codes.split(",") if c.strip()
+    ]
+else:
+    ROW_COLORS = []
+
+
+def row_color(account_number):
+    if not ROW_COLORS:
+        return DIM
+    return ROW_COLORS[(account_number - 1) % len(ROW_COLORS)]
 
 
 def _normalize(data):
@@ -310,18 +332,19 @@ def bar(ratio, reset, now, width=None):
     return out + RESET
 
 
-def bars_cell(q, now):
+def bars_cell(q, now, label_color=None):
     """The three aligned gauges of a row: 5h session, 7d overall, 7d model
     (Fable, falling back to the Sonnet window when that is all there is)."""
+    lc = DIM if label_color is None else label_color
     model_seven = q.get("unified7dFable")
     model_seven_reset = q.get("unified7dFableReset")
     if model_seven is None and q.get("unified7dSonnet") is not None:
         model_seven = q.get("unified7dSonnet")
         model_seven_reset = q.get("unified7dSonnetReset")
     return (
-        f"{DIM}Ses{RESET} {bar(q.get('unified5h'), q.get('unified5hReset'), now)} "
-        f"{DIM}Wk{RESET} {bar(q.get('unified7d'), q.get('unified7dReset'), now)} "
-        f"{DIM}Fbl{RESET} {bar(model_seven, model_seven_reset, now)}"
+        f"{lc}Ses{RESET} {bar(q.get('unified5h'), q.get('unified5hReset'), now)} "
+        f"{lc}Wk{RESET} {bar(q.get('unified7d'), q.get('unified7dReset'), now)} "
+        f"{lc}Fbl{RESET} {bar(model_seven, model_seven_reset, now)}"
     )
 
 
@@ -402,18 +425,19 @@ def main():
             if pinned_number is not None
             else acct.get("name") == current
         )
+        accent = row_color(account_number)
         # Same trim guard as the FLEET gutter for the blank marker cell.
-        marker = f"{CYAN}>{RESET}" if is_current else f"{DIM} {RESET}"
+        marker = f"{accent}>{RESET}" if is_current else f"{DIM} {RESET}"
         name_cell = (
-            f"{BOLD}{name.ljust(NAME_W)}{RESET}"
+            f"{BOLD}{accent}{name.ljust(NAME_W)}{RESET}"
             if is_current
-            else f"{DIM}{name.ljust(NAME_W)}{RESET}"
+            else f"{accent}{name.ljust(NAME_W)}{RESET}"
         )
         plan = (plan_label(acct) or "")[:plan_w]
         row = (
-            f"{marker}{DIM}{account_number:>2}.{RESET} {name_cell} "
-            f"{DIM}{plan.ljust(plan_w)}{RESET} {status_cell(acct)} "
-            f"{bars_cell(acct.get('quota') or {}, now)}"
+            f"{marker}{accent}{account_number:>2}.{RESET} {name_cell} "
+            f"{accent}{plan.ljust(plan_w)}{RESET} {status_cell(acct)} "
+            f"{bars_cell(acct.get('quota') or {}, now, accent)}"
         )
         renewal = fmt_renewal(acct)
         if renewal:

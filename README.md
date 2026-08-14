@@ -118,6 +118,7 @@ GitHub `main`의 최신 커밋을 확인하고, 설치본과 다를 때만 `inst
 | `TC_SL_CACHE_TTL` | `15` | `teamclaude status --json` 출력 캐시 시간(초) |
 | `TC_SL_CACHE_FILE` | `$TMPDIR/tc-statusline-cache-$UID.json` | 캐시 파일 경로 |
 | `TC_SL_BAR_WIDTH` | `12` | 쿼터 게이지 폭(문자 수, 최소 6) |
+| `TC_SL_ROW_COLORS` | `36,32,33,35,34,91` | 계정 줄별 강조색(ANSI SGR 코드, 쉼표 구분·순환). 빈 값이면 단색(흐림) |
 | `NO_COLOR` | 미설정 | ANSI 색상 비활성화 ([no-color.org](https://no-color.org)) |
 
 설치 스크립트 전용 환경변수:
@@ -273,6 +274,7 @@ Environment variables read by the script:
 | `TC_SL_CACHE_TTL` | `15` | seconds to cache `teamclaude status --json` output |
 | `TC_SL_CACHE_FILE` | `$TMPDIR/tc-statusline-cache-$UID.json` | cache file path |
 | `TC_SL_BAR_WIDTH` | `12` | width of each quota gauge in characters (min 6) |
+| `TC_SL_ROW_COLORS` | `36,32,33,35,34,91` | per-account-row accent colors (comma-separated ANSI SGR codes, cycled). Empty = single-tone (dim) rows |
 | `NO_COLOR` | unset | disable ANSI colors ([no-color.org](https://no-color.org)) |
 
 Installer-only environment variables:
