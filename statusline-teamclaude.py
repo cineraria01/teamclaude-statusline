@@ -221,6 +221,16 @@ def _reset_ts(value):
         return None
 
 
+def accounts_by_fable_reset(accounts, now):
+    """Keep account numbers stable, but show the soonest Fable reset first."""
+    def key(item):
+        q = item[1].get("quota") or {}
+        reset = _reset_ts(q.get("unified7dFableReset"))
+        return reset if reset is not None and reset > now * 1000 else float("inf")
+
+    return sorted(enumerate(accounts, 1), key=key)
+
+
 def pool_quota(accounts):
     """Pool the fleet's quota the way the teamclaude TUI does: average
     utilization over enabled, non-errored accounts (unmeasured windows are
@@ -418,7 +428,7 @@ def main():
             f"{DIM}Fbl{RESET} {bar(*pooled['fable'], now)}"
         )
 
-    for account_number, acct in enumerate(accounts, 1):
+    for account_number, acct in accounts_by_fable_reset(accounts, now):
         name = (acct.get("name") or "?")[:NAME_W]
         is_current = (
             account_number == pinned_number

@@ -27,6 +27,17 @@ assert statusline.fmt_remaining((now + 90061) * 1000, now) == "1d1h"
 assert statusline.fmt_remaining(now * 1000, now) == "now"
 assert statusline.fmt_remaining(None, now) is None
 
+# Account rows are chronological by the Fable reset. Their original
+# numbers stay attached so `claude N` keeps selecting the account shown as N.
+ordered = statusline.accounts_by_fable_reset([
+    {"quota": {"unified7dFableReset": (now + 300) * 1000}},
+    {"quota": {"unified7dFableReset": (now + 100) * 1000}},
+    {"quota": {"unified7dFableReset": (now - 1) * 1000}},
+    {"quota": {"unified7dFableReset": (now + 200) * 1000}},
+    {"quota": {}},
+], now)
+assert [number for number, _ in ordered] == [2, 4, 1, 3, 5]
+
 # _normalize maps 1.3.x proxy-endpoint field names onto the expected ones and
 # leaves already-normalized data untouched.
 normalized = statusline._normalize({
