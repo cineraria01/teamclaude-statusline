@@ -32,9 +32,9 @@ Configuration (environment variables):
     TC_SL_ROW_COLORS  per-account-row accent colors as comma-separated ANSI
                       SGR codes, cycled (default "36,32,33,35,34,91"; empty
                       restores single-tone rows)
-    TC_SL_ROW_GAP     "1" (default) inserts a blank spacer row between the
-                      dashboard rows so each account reads as its own block;
-                      "0" packs the rows tightly
+    TC_SL_ROW_GAP     "1" inserts a blank spacer row between the dashboard
+                      rows; "0" (default) packs the rows tightly — the row
+                      backgrounds already separate them
     TC_SL_ROW_BG      background colors painted across the dashboard rows
                       (FLEET first, then accounts in display order), as
                       comma-separated ANSI SGR codes cycled per row; "-"
@@ -96,12 +96,13 @@ else:
     ROW_COLORS = []
 
 
-# Spacer row between dashboard rows (TC_SL_ROW_GAP=0 disables). Claude Code
+# Spacer row between dashboard rows (TC_SL_ROW_GAP=1 enables; off by default
+# since the row backgrounds already separate the rows). Claude Code
 # drops empty and whitespace-only status-line rows and trims leading spaces,
 # so a genuinely blank line never shows up — the spacer is a single BRAILLE
 # PATTERN BLANK (U+2800): not JavaScript whitespace, one cell wide in every
 # terminal (East Asian Width: Neutral), and rendered as nothing.
-ROW_GAP = os.environ.get("TC_SL_ROW_GAP", "1").strip().lower() not in (
+ROW_GAP = os.environ.get("TC_SL_ROW_GAP", "0").strip().lower() not in (
     "0", "", "no", "off", "false"
 )
 SPACER = "\u2800"

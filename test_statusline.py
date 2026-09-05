@@ -166,7 +166,7 @@ lines = output.getvalue().splitlines()
 assert "+1 off" in lines[0]
 assert len({line.index("Ses") for line in lines}) == 1
 
-# Row gap: with TC_SL_ROW_GAP on (the default), a spacer row sits between
+# Row gap: with TC_SL_ROW_GAP=1 (off by default), a spacer row sits between
 # every dashboard row. Claude Code discards empty/whitespace-only rows and
 # trims leading spaces, so the spacer must be non-whitespace yet invisible —
 # BRAILLE PATTERN BLANK — and must never shift the gauge columns.
@@ -198,7 +198,7 @@ assert lines[5] == "\u2800"
 assert lines[6].startswith("  2. two@example.c")
 assert len(lines) == 7
 assert len({line.index("Ses") for line in lines[2::2]}) == 1
-os.environ["TC_SL_ROW_GAP"] = "off"
+os.environ.pop("TC_SL_ROW_GAP")
 packed = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(packed)
 assert packed.ROW_GAP is False and packed.ROW_SEP == "\n"
