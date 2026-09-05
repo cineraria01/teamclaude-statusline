@@ -241,6 +241,13 @@ assert two.startswith(BG) and not three.startswith(BG)
 inner = fleet[len(BG):-len("\033[0m")]
 assert "\033[0m" not in inner.replace("\033[0m" + BG, "")
 assert len({colored.visible_len(r) for r in (fleet, one, two, three)}) == 1
+# The gauge track follows the row: a 256-color gray stripe gets a track three
+# steps lighter; an unpainted row keeps the default gray track.
+assert colored.track_code("\033[48;5;236m") == "48;5;239"
+assert colored.track_code("\033[48;5;254m") == "48;5;255"
+assert colored.track_code("") == "100" and colored.track_code("\033[44m") == "100"
+assert "\033[48;5;239;37m" in fleet and "\033[100;37m" not in fleet
+assert "\033[100;37m" in one and "\033[48;5;239;37m" not in one
 os.environ["NO_COLOR"] = "1"
 print("bg ok")
 

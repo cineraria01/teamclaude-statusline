@@ -38,8 +38,10 @@ Configuration (environment variables):
     TC_SL_ROW_BG      background colors painted across the dashboard rows
                       (FLEET first, then accounts in display order), as
                       comma-separated ANSI SGR codes cycled per row; "-"
-                      leaves that row unpainted (default "48;5;236,48;5;238"
-                      = alternating dark-gray stripes; empty disables)
+                      leaves that row unpainted (default "48;5;235,48;5;239"
+                      = alternating dark-gray stripes; empty disables). The
+                      unfilled part of each gauge follows its row: a 256-color
+                      gray stripe gets a track three steps lighter
     NO_COLOR          disable ANSI colors when set (https://no-color.org)
 """
 
@@ -114,7 +116,7 @@ ROW_SEP = f"\n{DIM}{SPACER}{RESET}\n" if ROW_GAP else "\n"
 # row background, and the row is padded to the widest row so the stripe is a
 # clean rectangle. "-" skips painting for that palette slot.
 if COLOR:
-    _bg_codes = os.environ.get("TC_SL_ROW_BG", "48;5;236,48;5;238")
+    _bg_codes = os.environ.get("TC_SL_ROW_BG", "48;5;235,48;5;239")
     ROW_BGS = [
         "" if c.strip() == "-" else f"\033[{c.strip()}m"
         for c in _bg_codes.split(",") if c.strip()
@@ -129,14 +131,36 @@ def visible_len(text):
     return len(_ANSI_RE.sub("", text))
 
 
+_GRAY_BG_RE = re.compile(r"\033\[48;5;(\d+)m")
+DEFAULT_TRACK = "100"
+
+
+def row_bg(position):
+    """Background for the dashboard row at display `position` (FLEET = 0)."""
+    if not ROW_BGS:
+        return ""
+    return ROW_BGS[position % len(ROW_BGS)]
+
+
+def track_code(bg):
+    """SGR background for the unfilled part of a gauge on a row painted `bg`.
+    The gauges cover most of the row, so a fixed gray track would hide the
+    stripes; a 256-color gray stripe gets a track three steps lighter, which
+    stays visible against its own row yet differs from the next row's."""
+    m = _GRAY_BG_RE.fullmatch(bg or "")
+    if m and 232 <= int(m.group(1)) <= 255:
+        return f"48;5;{min(int(m.group(1)) + 3, 255)}"
+    return DEFAULT_TRACK
+
+
 def paint_rows(rows):
-    """Apply the cycled row backgrounds to already-rendered dashboard rows."""
-    if not ROW_BGS or not rows:
-        return rows
-    width = max(visible_len(r) for r in rows)
+    """`rows` is a list of (rendered_row, bg). Pads every row to one visible
+    width and paints the background across the painted ones."""
+    if not rows:
+        return []
+    width = max(visible_len(r) for r, _ in rows)
     painted = []
-    for i, row in enumerate(rows):
-        bg = ROW_BGS[i % len(ROW_BGS)]
+    for row, bg in rows:
         pad = " " * (width - visible_len(row))
         if not bg:
             painted.append(row + pad)
@@ -367,18 +391,19 @@ def fmt_remaining(value, now=None):
         return None
 
 
-def bar(ratio, reset, now, width=None):
+def bar(ratio, reset, now, width=None, track=DEFAULT_TRACK):
     """TUI-style quota gauge: `width` background-colored cells, filled
     proportionally to usage (green <70%, yellow <90%, red beyond) over a gray
-    remainder, with 'usage% countdown' centered inside. No-data windows render
-    an all-gray bar. Without colors, degrades to the bracketed label."""
+    remainder (`track`, an SGR background code), with 'usage% countdown'
+    centered inside. No-data windows render an all-track bar. Without colors,
+    degrades to the bracketed label."""
     if width is None:
         width = BAR_W
     remaining = fmt_remaining(reset, now)
 
     if ratio is None:
         text = (remaining or "-")[:width].center(width)
-        return f"\033[100;37m{text}{RESET}" if COLOR else f"[{text}]"
+        return f"\033[{track};37m{text}{RESET}" if COLOR else f"[{text}]"
 
     ratio = max(0.0, min(1.0, ratio))
     pct = f"{round(ratio * 100)}%"
@@ -396,11 +421,11 @@ def bar(ratio, reset, now, width=None):
     if filled:
         out += f"\033[{bg};97m{text[:filled]}"
     if filled < width:
-        out += f"\033[100;37m{text[filled:]}"
+        out += f"\033[{track};37m{text[filled:]}"
     return out + RESET
 
 
-def bars_cell(q, now, label_color=None):
+def bars_cell(q, now, label_color=None, track=DEFAULT_TRACK):
     """The three aligned gauges of a row: 5h session, 7d overall, 7d model
     (Fable, falling back to the Sonnet window when that is all there is)."""
     lc = DIM if label_color is None else label_color
@@ -410,9 +435,9 @@ def bars_cell(q, now, label_color=None):
         model_seven = q.get("unified7dSonnet")
         model_seven_reset = q.get("unified7dSonnetReset")
     return (
-        f"{lc}Ses{RESET} {bar(q.get('unified5h'), q.get('unified5hReset'), now)} "
-        f"{lc}Wk{RESET} {bar(q.get('unified7d'), q.get('unified7dReset'), now)} "
-        f"{lc}Fbl{RESET} {bar(model_seven, model_seven_reset, now)}"
+        f"{lc}Ses{RESET} {bar(q.get('unified5h'), q.get('unified5hReset'), now, track=track)} "
+        f"{lc}Wk{RESET} {bar(q.get('unified7d'), q.get('unified7dReset'), now, track=track)} "
+        f"{lc}Fbl{RESET} {bar(model_seven, model_seven_reset, now, track=track)}"
     )
 
 
@@ -478,14 +503,17 @@ def main():
         # The gutter is wrapped in ANSI codes so the raw line does not begin
         # with whitespace — Claude Code trims leading spaces off status-line
         # rows, which would shift the FLEET row out of column.
-        rows.append(
+        bg = row_bg(len(rows))
+        track = track_code(bg)
+        rows.append((
             f"{DIM}     {RESET}{BOLD}{'FLEET'.ljust(NAME_W)}{RESET} "
             f"{DIM}{size.ljust(plan_w)}{RESET} "
             f"{DIM}{'pooled'.ljust(STATUS_W)}{RESET} "
-            f"{DIM}Ses{RESET} {bar(*pooled['five'], now)} "
-            f"{DIM}Wk{RESET} {bar(*pooled['seven'], now)} "
-            f"{DIM}Fbl{RESET} {bar(*pooled['fable'], now)}"
-        )
+            f"{DIM}Ses{RESET} {bar(*pooled['five'], now, track=track)} "
+            f"{DIM}Wk{RESET} {bar(*pooled['seven'], now, track=track)} "
+            f"{DIM}Fbl{RESET} {bar(*pooled['fable'], now, track=track)}",
+            bg,
+        ))
 
     for account_number, acct in accounts_by_fable_reset(accounts, now):
         name = (acct.get("name") or "?")[:NAME_W]
@@ -495,6 +523,7 @@ def main():
             else acct.get("name") == current
         )
         accent = row_color(account_number)
+        bg = row_bg(len(rows))
         # Same trim guard as the FLEET gutter for the blank marker cell.
         marker = f"{accent}>{RESET}" if is_current else f"{DIM} {RESET}"
         name_cell = (
@@ -506,12 +535,12 @@ def main():
         row = (
             f"{marker}{accent}{account_number:>2}.{RESET} {name_cell} "
             f"{accent}{plan.ljust(plan_w)}{RESET} {status_cell(acct)} "
-            f"{bars_cell(acct.get('quota') or {}, now, accent)}"
+            f"{bars_cell(acct.get('quota') or {}, now, accent, track_code(bg))}"
         )
         renewal = fmt_renewal(acct)
         if renewal:
             row += f" {renewal}"
-        rows.append(row)
+        rows.append((row, bg))
 
     print(ROW_SEP.join(parts + paint_rows(rows)))
 
