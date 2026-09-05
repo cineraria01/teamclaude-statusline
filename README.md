@@ -120,6 +120,7 @@ GitHub `main`의 최신 커밋을 확인하고, 설치본과 다를 때만 `inst
 | `TC_SL_BAR_WIDTH` | `12` | 쿼터 게이지 폭(문자 수, 최소 6) |
 | `TC_SL_ROW_COLORS` | `36,32,33,35,34,91` | 계정 줄별 강조색(ANSI SGR 코드, 쉼표 구분·순환). 빈 값이면 단색(흐림) |
 | `TC_SL_ROW_GAP` | `1` | 대시보드 줄 사이에 빈 구분 줄 삽입. `0`이면 줄을 붙여서 표시 |
+| `TC_SL_ROW_BG` | `48;5;236,48;5;238` | 대시보드 줄 뒷배경색(ANSI SGR 코드, 쉼표 구분·순환, `-`는 그 칸 미적용). 빈 값이면 배경 없음 |
 | `NO_COLOR` | 미설정 | ANSI 색상 비활성화 ([no-color.org](https://no-color.org)) |
 
 설치 스크립트 전용 환경변수:
@@ -277,6 +278,7 @@ Environment variables read by the script:
 | `TC_SL_BAR_WIDTH` | `12` | width of each quota gauge in characters (min 6) |
 | `TC_SL_ROW_COLORS` | `36,32,33,35,34,91` | per-account-row accent colors (comma-separated ANSI SGR codes, cycled). Empty = single-tone (dim) rows |
 | `TC_SL_ROW_GAP` | `1` | blank spacer row between dashboard rows. `0` packs the rows tightly |
+| `TC_SL_ROW_BG` | `48;5;236,48;5;238` | dashboard row background colors (comma-separated ANSI SGR codes, cycled; `-` leaves that slot unpainted). Empty = no backgrounds |
 | `NO_COLOR` | unset | disable ANSI colors ([no-color.org](https://no-color.org)) |
 
 Installer-only environment variables:

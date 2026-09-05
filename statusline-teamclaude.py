@@ -35,12 +35,18 @@ Configuration (environment variables):
     TC_SL_ROW_GAP     "1" (default) inserts a blank spacer row between the
                       dashboard rows so each account reads as its own block;
                       "0" packs the rows tightly
+    TC_SL_ROW_BG      background colors painted across the dashboard rows
+                      (FLEET first, then accounts in display order), as
+                      comma-separated ANSI SGR codes cycled per row; "-"
+                      leaves that row unpainted (default "48;5;236,48;5;238"
+                      = alternating dark-gray stripes; empty disables)
     NO_COLOR          disable ANSI colors when set (https://no-color.org)
 """
 
 import calendar
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -100,6 +106,42 @@ ROW_GAP = os.environ.get("TC_SL_ROW_GAP", "1").strip().lower() not in (
 )
 SPACER = "\u2800"
 ROW_SEP = f"\n{DIM}{SPACER}{RESET}\n" if ROW_GAP else "\n"
+
+# Row backgrounds: each dashboard row is painted edge to edge in a color
+# cycled from TC_SL_ROW_BG so adjacent rows read as separate stripes even
+# when the accent colors are similar. Every RESET inside the row re-arms the
+# row background, and the row is padded to the widest row so the stripe is a
+# clean rectangle. "-" skips painting for that palette slot.
+if COLOR:
+    _bg_codes = os.environ.get("TC_SL_ROW_BG", "48;5;236,48;5;238")
+    ROW_BGS = [
+        "" if c.strip() == "-" else f"\033[{c.strip()}m"
+        for c in _bg_codes.split(",") if c.strip()
+    ]
+else:
+    ROW_BGS = []
+
+_ANSI_RE = re.compile(r"\033\[[0-9;]*m")
+
+
+def visible_len(text):
+    return len(_ANSI_RE.sub("", text))
+
+
+def paint_rows(rows):
+    """Apply the cycled row backgrounds to already-rendered dashboard rows."""
+    if not ROW_BGS or not rows:
+        return rows
+    width = max(visible_len(r) for r in rows)
+    painted = []
+    for i, row in enumerate(rows):
+        bg = ROW_BGS[i % len(ROW_BGS)]
+        pad = " " * (width - visible_len(row))
+        if not bg:
+            painted.append(row + pad)
+            continue
+        painted.append(f"{bg}{row.replace(RESET, RESET + bg)}{pad}{RESET}")
+    return painted
 
 
 def row_color(account_number):
@@ -422,6 +464,7 @@ def main():
     accounts = data.get("accounts", [])
 
     pooled = pool_quota(accounts)
+    rows = []
     # The plan column must fit the FLEET size label ("x3 +1 off" is wider
     # than "Max 20x") — ljust never truncates, so a fixed width would shift
     # the FLEET row out of column whenever an account is off.
@@ -434,7 +477,7 @@ def main():
         # The gutter is wrapped in ANSI codes so the raw line does not begin
         # with whitespace — Claude Code trims leading spaces off status-line
         # rows, which would shift the FLEET row out of column.
-        parts.append(
+        rows.append(
             f"{DIM}     {RESET}{BOLD}{'FLEET'.ljust(NAME_W)}{RESET} "
             f"{DIM}{size.ljust(plan_w)}{RESET} "
             f"{DIM}{'pooled'.ljust(STATUS_W)}{RESET} "
@@ -467,9 +510,9 @@ def main():
         renewal = fmt_renewal(acct)
         if renewal:
             row += f" {renewal}"
-        parts.append(row)
+        rows.append(row)
 
-    print(ROW_SEP.join(parts))
+    print(ROW_SEP.join(parts + paint_rows(rows)))
 
 
 if __name__ == "__main__":

@@ -204,3 +204,43 @@ spec.loader.exec_module(packed)
 assert packed.ROW_GAP is False and packed.ROW_SEP == "\n"
 
 print("ok")
+
+# Row backgrounds: with colors on, every dashboard row (not the model header,
+# not the spacers) is painted with a cycled background, every RESET inside
+# the row re-arms it, and rows are padded to one visible width so the stripes
+# form a clean rectangle. Header/spacer rows stay unpainted.
+os.environ.pop("NO_COLOR")
+os.environ["TC_SL_ROW_GAP"] = "1"
+os.environ["TC_SL_ROW_BG"] = "48;5;236,-"
+colored = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(colored)
+assert colored.ROW_BGS == ["\033[48;5;236m", ""]
+colored.load_status = lambda: {
+    "currentAccount": "one@example.com",
+    "accounts": [
+        {"name": "one@example.com", "quota": {"unified5h": 0.5},
+         "profile": {"subscriptionCreatedAt": "2025-01-01T00:00:00Z"}},
+        {"name": "two@example.com", "quota": {}},
+        {"name": "three@example.com", "quota": {}},
+    ],
+}
+colored.time.time = lambda: now
+sys.stdin = io.StringIO('{"model":{"display_name":"Fable 5"}}')
+output = io.StringIO()
+sys.stdout = output
+colored.main()
+sys.stdout = sys.__stdout__
+lines = output.getvalue().splitlines()
+BG = "\033[48;5;236m"
+assert not lines[0].startswith(BG) and lines[1] == f"\033[2m\u2800\033[0m"
+fleet, one, two, three = lines[2], lines[4], lines[6], lines[8]
+assert fleet.startswith(BG) and fleet.endswith("\033[0m")
+assert not one.startswith(BG)            # "-" slot: unpainted
+assert two.startswith(BG) and not three.startswith(BG)
+# every reset inside a painted row is immediately followed by the row bg
+inner = fleet[len(BG):-len("\033[0m")]
+assert "\033[0m" not in inner.replace("\033[0m" + BG, "")
+assert len({colored.visible_len(r) for r in (fleet, one, two, three)}) == 1
+os.environ["NO_COLOR"] = "1"
+print("bg ok")
+
