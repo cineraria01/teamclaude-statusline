@@ -12,6 +12,8 @@ sys.dont_write_bytecode = True
 # renewal-anniversary math (which uses local dates) is reproducible.
 os.environ["NO_COLOR"] = "1"
 os.environ["TZ"] = "UTC"
+# Row indices below assume packed rows; the spacer row is exercised at the end.
+os.environ["TC_SL_ROW_GAP"] = "0"
 time.tzset()
 
 spec = importlib.util.spec_from_file_location(
@@ -163,3 +165,42 @@ sys.stdout = sys.__stdout__
 lines = output.getvalue().splitlines()
 assert "+1 off" in lines[0]
 assert len({line.index("Ses") for line in lines}) == 1
+
+# Row gap: with TC_SL_ROW_GAP on (the default), a spacer row sits between
+# every dashboard row. Claude Code discards empty/whitespace-only rows and
+# trims leading spaces, so the spacer must be non-whitespace yet invisible —
+# BRAILLE PATTERN BLANK — and must never shift the gauge columns.
+os.environ["TC_SL_ROW_GAP"] = "1"
+gapped = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(gapped)
+assert gapped.ROW_GAP is True
+gapped.load_status = lambda: {
+    "currentAccount": "one@example.com",
+    "accounts": [
+        {"name": "one@example.com", "quota": {}},
+        {"name": "two@example.com", "quota": {}},
+    ],
+}
+gapped.time.time = lambda: now
+os.environ.pop("TEAMCLAUDE_STATUSLINE_INDEX", None)
+sys.stdin = io.StringIO('{"model":{"display_name":"Fable 5"}}')
+output = io.StringIO()
+sys.stdout = output
+gapped.main()
+sys.stdout = sys.__stdout__
+lines = output.getvalue().splitlines()
+assert lines[0] == "Fable 5"
+assert lines[1] == "\u2800" and lines[1].strip() != "" and "\u2800".strip() == "\u2800"
+assert lines[2].lstrip().startswith("FLEET")
+assert lines[3] == "\u2800"
+assert lines[4].startswith("> 1. one@example.c")
+assert lines[5] == "\u2800"
+assert lines[6].startswith("  2. two@example.c")
+assert len(lines) == 7
+assert len({line.index("Ses") for line in lines[2::2]}) == 1
+os.environ["TC_SL_ROW_GAP"] = "off"
+packed = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(packed)
+assert packed.ROW_GAP is False and packed.ROW_SEP == "\n"
+
+print("ok")
