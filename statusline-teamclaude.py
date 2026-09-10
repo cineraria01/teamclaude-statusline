@@ -197,14 +197,24 @@ def _http_status():
     import urllib.request
 
     port = 3456
+    api_key = None
     try:
         with open(os.path.expanduser("~/.config/teamclaude.json")) as f:
-            port = (json.load(f).get("proxy") or {}).get("port") or 3456
+            proxy = json.load(f).get("proxy") or {}
+            port = proxy.get("port") or 3456
+            api_key = proxy.get("apiKey")
     except (OSError, ValueError):
         pass
-    with urllib.request.urlopen(
-        f"http://127.0.0.1:{port}/teamclaude/status", timeout=3
-    ) as res:
+    # sangrokjung/teamclaude (2026-09-10 단일 설치본) hides account names from
+    # /teamclaude/status unless the caller proves it is local AND holds the
+    # proxy key: send x-api-key + x-teamcodex-status-identity, same as the CLI.
+    headers = {"x-teamcodex-status-identity": "1"}
+    if api_key:
+        headers["x-api-key"] = api_key
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/teamclaude/status", headers=headers
+    )
+    with urllib.request.urlopen(req, timeout=3) as res:
         return json.load(res)
 
 

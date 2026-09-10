@@ -37,13 +37,18 @@ import sys
 import urllib.request
 
 port = 3456
+api_key = None
 try:
     with open("'"$HOME"'/.config/teamclaude.json") as f:
-        port = (json.load(f).get("proxy") or {}).get("port") or 3456
+        proxy = json.load(f).get("proxy") or {}
+        port = proxy.get("port") or 3456
+        api_key = proxy.get("apiKey")
 except (OSError, ValueError):
     pass
 try:
-    with urllib.request.urlopen(f"http://127.0.0.1:{port}/teamclaude/status", timeout=3) as res:
+    req = urllib.request.Request(f"http://127.0.0.1:{port}/teamclaude/status",
+        headers={"x-teamcodex-status-identity": "1", **({"x-api-key": api_key} if api_key else {})})
+    with urllib.request.urlopen(req, timeout=3) as res:
         accounts = json.load(res).get("accounts", [])
 except OSError:
     accounts = []
