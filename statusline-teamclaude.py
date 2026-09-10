@@ -226,23 +226,30 @@ def load_status():
                 return json.load(f)
     except (OSError, ValueError):
         pass
+    # The running proxy's HTTP status is the primary source: local, ~10 ms,
+    # and (with the identity headers) complete. `teamclaude status --json`
+    # only exists on some builds (not on the sangrokjung/teamclaude install
+    # used since 2026-09-10) and spawning node costs ~0.5 s per render, so it
+    # is the fallback now — reached only when the proxy is not answering.
     data = None
     try:
-        out = subprocess.run(
-            ["teamclaude", "status", "--json"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if out.returncode == 0:
-            data = json.loads(out.stdout)
-    except FileNotFoundError:
-        return "missing"
+        data = _http_status()
     except Exception:
         data = None
     if data is None:
         try:
-            data = _http_status()
+            out = subprocess.run(
+                ["teamclaude", "status", "--json"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if out.returncode == 0:
+                data = json.loads(out.stdout)
+        except FileNotFoundError:
+            return "missing"
         except Exception:
-            return None
+            data = None
+    if data is None:
+        return None
     try:
         data = _normalize(data)
         tmp = CACHE + ".tmp"
