@@ -54,7 +54,7 @@ if outputs:
 UPDATE_INTERVAL_SEC = 86400
 update_script = base / "statusline-autoupdate.sh"
 update_stamp = base / "teamclaude-statusline-update-stamp"
-if config.get("autoUpdate", True) and update_script.exists():
+if config.get("autoUpdate", False) and update_script.exists():
     try:
         update_due = time.time() - update_stamp.stat().st_mtime >= UPDATE_INTERVAL_SEC
     except OSError:

@@ -46,6 +46,7 @@ Configuration (environment variables):
 """
 
 import calendar
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import re
@@ -54,6 +55,7 @@ import sys
 import tempfile
 import time
 from datetime import date, datetime, timezone
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 CACHE = os.environ.get("TC_SL_CACHE_FILE") or os.path.join(
     tempfile.gettempdir(), f"tc-statusline-cache-{os.getuid()}.json"
@@ -191,16 +193,79 @@ def _normalize(data):
     return data
 
 
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, *args):
+        return None
+
+
+def load_profiles(data, config):
+    """Restore billing metadata omitted by newer proxies; cache no credentials."""
+    path = CACHE + ".profiles"
+    try:
+        with open(path) as f:
+            cached = json.load(f)
+        if not isinstance(cached, dict):
+            cached = {}
+    except (OSError, ValueError):
+        cached = {}
+    configured = {a.get("accountUuid"): a for a in config.get("accounts", []) if a.get("accountUuid")}
+    now = time.time()
+
+    def refresh(acct):
+        uuid = acct.get("accountUuid")
+        local = configured.get(uuid)
+        if acct.get("profile") or not local or not local.get("accessToken"):
+            return
+        entry = cached.get(uuid) or {}
+        ttl = 3600 if entry.get("profile") else 60
+        if not 0 <= now - entry.get("checkedAt", 0) < ttl:
+            entry = {"checkedAt": now}
+            try:
+                request = Request("https://api.anthropic.com/api/oauth/profile",
+                                  headers={"Authorization": "Bearer " + local["accessToken"]})
+                opener = build_opener(ProxyHandler({}), NoRedirect())
+                with opener.open(request, timeout=1.5) as response:
+                    profile = json.loads(response.read(262145))
+                if profile.get("account", {}).get("uuid") == uuid:
+                    org = profile.get("organization") or {}
+                    entry["profile"] = {
+                        "orgType": org.get("organization_type"),
+                        "rateLimitTier": org.get("rate_limit_tier"),
+                        "subscriptionStatus": org.get("subscription_status"),
+                        "subscriptionCreatedAt": org.get("subscription_created_at"),
+                    }
+            except (OSError, ValueError, TypeError, AttributeError):
+                pass
+        cached[uuid] = entry
+        if entry.get("profile"):
+            acct["profile"] = entry["profile"]
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        list(executor.map(refresh, data.get("accounts", [])))
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", dir=os.path.dirname(path), delete=False) as f:
+            temporary = f.name
+            json.dump({key: value for key, value in cached.items() if key in configured}, f)
+        os.replace(temporary, path)
+    except OSError:
+        pass
+    finally:
+        if temporary and os.path.exists(temporary):
+            os.unlink(temporary)
+    return data
+
+
 def _http_status():
     """Fallback for teamclaude builds without `status --json`: read the
     running proxy's /teamclaude/status endpoint directly."""
-    import urllib.request
-
     port = 3456
     api_key = None
+    config = {}
     try:
-        with open(os.path.expanduser("~/.config/teamclaude.json")) as f:
-            proxy = json.load(f).get("proxy") or {}
+        with open(os.path.expanduser(os.environ.get("TEAMCLAUDE_CONFIG", "~/.config/teamclaude.json"))) as f:
+            config = json.load(f)
+            proxy = config.get("proxy") or {}
             port = proxy.get("port") or 3456
             api_key = proxy.get("apiKey")
     except (OSError, ValueError):
@@ -211,11 +276,14 @@ def _http_status():
     headers = {"x-teamcodex-status-identity": "1"}
     if api_key:
         headers["x-api-key"] = api_key
-    req = urllib.request.Request(
+    if type(port) is not int or not 1024 <= port <= 65535:
+        raise ValueError("invalid local proxy port")
+    req = Request(
         f"http://127.0.0.1:{port}/teamclaude/status", headers=headers
     )
-    with urllib.request.urlopen(req, timeout=3) as res:
-        return json.load(res)
+    with build_opener(ProxyHandler({}), NoRedirect()).open(req, timeout=3) as res:
+        data = json.load(res)
+    return load_profiles(data, config)
 
 
 def load_status():
@@ -277,35 +345,37 @@ def plan_label(acct):
 
 
 def fmt_renewal(acct, today=None):
-    """ESTIMATED next-billing countdown (D-8, D-DAY), mirroring the teamclaude
-    TUI: monthly billing renews on the subscription-creation day-of-month
-    (clamped to shorter months). Hidden when the subscription is not healthy —
-    the red status column already says billing is broken."""
+    """End-date gauge; ~ marks a monthly-anniversary estimate, not cancellation."""
     profile = acct.get("profile") or {}
-    if profile.get("subscriptionStatus") not in (None, "active", "trialing"):
-        return None
-    created_iso = profile.get("subscriptionCreatedAt")
-    if not created_iso:
-        return None
-    try:
-        created = datetime.fromisoformat(str(created_iso).replace("Z", "+00:00"))
-    except ValueError:
-        return None
     if today is None:
         today = date.today()
-    day = created.astimezone().day
-    year, month = today.year, today.month
-    clamp = lambda y, m: min(day, calendar.monthrange(y, m)[1])
-    candidate = date(year, month, clamp(year, month))
-    if candidate < today:
-        month += 1
-        if month > 12:
-            month, year = 1, year + 1
-        candidate = date(year, month, clamp(year, month))
+    end = (acct.get("subscription") or {}).get("endsAt")
+    estimated = not end
+    try:
+        if end:
+            candidate = datetime.fromtimestamp(_reset_ts(end) / 1000).date()
+        else:
+            if profile.get("subscriptionStatus") not in (None, "active", "trialing"):
+                return None
+            created = datetime.fromisoformat(str(profile.get("subscriptionCreatedAt")).replace("Z", "+00:00"))
+            day = created.astimezone().day
+            year, month = today.year, today.month
+            clamp = lambda y, m: min(day, calendar.monthrange(y, m)[1])
+            candidate = date(year, month, clamp(year, month))
+            if candidate < today:
+                month += 1
+                if month > 12:
+                    month, year = 1, year + 1
+                candidate = date(year, month, clamp(year, month))
+    except (TypeError, ValueError, OSError, OverflowError):
+        return None
     days = (candidate - today).days
-    color = RED if days <= 3 else YELLOW if days <= 7 else GREEN
-    label = "D-DAY" if days <= 0 else f"D-{days}"
-    return f"{color}{label.rjust(5)}{RESET}"
+    label = "past" if days < 0 else "D-DAY" if days == 0 else f"D-{days}"
+    text = f"{'~' if estimated else ''}{candidate:%m/%d} {label}".center(14)
+    if not COLOR:
+        return f"[{text}]"
+    bg = 41 if days <= 3 else 43 if days <= 7 else 42
+    return f"\033[{bg};97m{text}{RESET}"
 
 
 def _reset_ts(value):
@@ -503,6 +573,8 @@ def main():
             pinned_number = None
     except ValueError:
         pinned_number = None
+    if data.get("routingPolicy") == "fable-reset":
+        pinned_number = None
     now = time.time()
     accounts = data.get("accounts", [])
 
@@ -555,8 +627,8 @@ def main():
             f"{bars_cell(acct.get('quota') or {}, now, accent, track_code(bg))}"
         )
         renewal = fmt_renewal(acct)
-        if renewal:
-            row += f" {renewal}"
+        unknown = f"\033[100;37m{'-'.center(14)}{RESET}" if COLOR else f"[{'-'.center(14)}]"
+        row += f" {accent}End{RESET} {renewal or unknown}"
         rows.append((row, bg))
 
     print(ROW_SEP.join(parts + paint_rows(rows)))

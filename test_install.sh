@@ -10,6 +10,7 @@ trap 'rm -rf "$TEST_DIR"' EXIT
 # ANSI colors would break the exact-line greps below.
 export TC_SL_CACHE_FILE="$TEST_DIR/statusline-cache.json"
 export NO_COLOR=1
+export NO_RELOAD_PATCH=1
 
 TEST_HOME="$TEST_DIR/home"
 TEST_BIN="$TEST_DIR/bin"
@@ -100,6 +101,7 @@ combined=$(printf '%s\n' '{"model":{"display_name":"Fable 5"}}' | \
   "$TEST_HOME/.claude/statusline-wrapper.py")
 grep -q '^ORCA$' <<< "$combined"
 grep -q '^Fable 5$' <<< "$combined"
+test ! -e "$TEST_HOME/.claude/teamclaude-statusline-update-stamp"
 
 HOME="$TEST_HOME" SHELL=/bin/bash CLAUDE_DIR="$TEST_HOME/.claude" \
   PATH="$TEST_BIN:$PATH" "$REPO_DIR/uninstall.sh" >/dev/null

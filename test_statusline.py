@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 import importlib.util
 import io
+import json
 import os
 import sys
 import time
+import tempfile
+from unittest.mock import patch, MagicMock
 from datetime import date
 from pathlib import Path
 
@@ -74,19 +77,51 @@ assert statusline.plan_label({}) is None
 # Renewal estimate: monthly anniversary of the subscription's creation,
 # clamped to shorter months; today counts as D-DAY; hidden for broken
 # subscriptions and unknown creation dates.
-assert statusline.fmt_renewal(
+assert "~02/28 D-18" in statusline.fmt_renewal(
     {"profile": {"subscriptionCreatedAt": "2025-01-31T12:00:00Z"}},
     today=date(2026, 2, 10),
-).strip() == "D-18"
-assert statusline.fmt_renewal(
+)
+assert "~08/14 D-DAY" in statusline.fmt_renewal(
     {"profile": {"subscriptionCreatedAt": "2025-08-14T01:00:00Z"}},
     today=date(2026, 8, 14),
-).strip() == "D-DAY"
+)
 assert statusline.fmt_renewal(
     {"profile": {"subscriptionStatus": "canceled",
                  "subscriptionCreatedAt": "2025-01-01T00:00:00Z"}}
 ) is None
 assert statusline.fmt_renewal({"profile": {}}) is None
+assert "09/14 D-3" in statusline.fmt_renewal(
+    {"subscription": {"endsAt": "2026-09-14T00:00:00Z"}}, today=date(2026, 9, 11))
+assert "past" in statusline.fmt_renewal(
+    {"subscription": {"endsAt": "2026-09-10T00:00:00Z"}}, today=date(2026, 9, 11))
+
+# Missing proxy profiles are fetched by exact account identity, cached without
+# tokens, and refreshed from the current config after the one-hour TTL.
+with tempfile.TemporaryDirectory() as folder, patch.object(statusline, "CACHE", str(Path(folder) / "status")):
+    config = {"accounts": [{"accountUuid": "a", "accessToken": "secret-fixture"}]}
+    response = MagicMock()
+    response.__enter__.return_value.read.return_value = json.dumps({
+        "account": {"uuid": "a"}, "organization": {
+            "rate_limit_tier": "default_claude_max_20x", "subscription_status": "active",
+            "subscription_created_at": "2026-07-24T04:07:57Z"}}).encode()
+    with patch.object(statusline, "build_opener") as factory:
+        factory.return_value.open.return_value = response
+        data = statusline.load_profiles({"accounts": [{"accountUuid": "a"}]}, config)
+        assert statusline.plan_label(data["accounts"][0]) == "Max 20x"
+        request = factory.return_value.open.call_args.args[0]
+        assert request.full_url == "https://api.anthropic.com/api/oauth/profile"
+        assert request.get_header("Authorization") == "Bearer secret-fixture"
+        assert isinstance(factory.call_args.args[1], statusline.NoRedirect)
+        statusline.load_profiles({"accounts": [{"accountUuid": "a"}]}, config)
+        assert factory.return_value.open.call_count == 1
+        cache = Path(statusline.CACHE + ".profiles")
+        assert "secret-fixture" not in cache.read_text()
+        assert cache.stat().st_mode & 0o777 == 0o600
+        saved = json.loads(cache.read_text()); saved["a"]["checkedAt"] -= 3601
+        cache.write_text(json.dumps(saved))
+        response.__enter__.return_value.read.return_value = b'{"account":{"uuid":"different"}}'
+        assert "profile" not in statusline.load_profiles({"accounts": [{"accountUuid": "a"}]}, config)["accounts"][0]
+        assert factory.return_value.open.call_count == 2
 
 # Fleet pooling: disabled/errored accounts are excluded, unmeasured windows
 # are skipped (not counted as zero), the reset is the soonest in the pool,
@@ -143,6 +178,16 @@ assert lines[0] == "Fable 5"
 assert lines[1].lstrip().startswith("FLEET")
 assert lines[2].startswith("> 1. one@example.c")
 assert lines[3].startswith("  2. two@example.c")
+# Automatic Fable routing must not show an old `claude N` display-only pin.
+original_load = statusline.load_status
+statusline.load_status = lambda: {**original_load(), "routingPolicy": "fable-reset"}
+sys.stdin = io.StringIO('{}')
+output = io.StringIO()
+sys.stdout = output
+statusline.main()
+sys.stdout = sys.__stdout__
+assert any(line.startswith("> 2. two@example.c") for line in output.getvalue().splitlines())
+statusline.load_status = original_load
 # Column alignment: every dashboard row places its gauges at the same offset.
 assert len({line.index("Ses") for line in lines[1:]}) == 1
 

@@ -12,7 +12,7 @@ Fable 5
   3. carol@exampl  Max 20x active  Ses [  0% 3h40m  ] Wk [     -      ] Fbl [ 97% 2d16h  ]   D-9
 ```
 
-teamclaude TUI를 그대로 미러링한 대시보드입니다. 최상단 `FLEET` 줄은 TUI와 같은 방식으로 활성 계정들을 풀링합니다(창별 평균 사용률, 가장 빠른 리셋 시각, 비활성 계정이 제외되면 `+N off` 표기). 각 계정 줄에는 요금제(`Max 20x` / `Pro`), 상태 컬럼, 세 개의 쿼터 게이지 — `Ses` 5시간 세션, `Wk` 전체 7일, `Fbl` 모델별 7일(Fable, 해당 창이 없으면 Sonnet 창) — 이 `사용률% 리셋까지-남은-시간` 형태로 표시되고, 오른쪽 끝에 예상 다음 결제일이 `D-N` 카운트다운으로 붙습니다(TUI와 동일하게 구독 생성일의 월 단위 기념일로 추정, 3일 이하 빨강·7일 이하 노랑, 구독에 문제가 있으면 D-day 대신 상태 컬럼이 빨간색으로 바뀜).
+teamclaude TUI를 반영한 대시보드입니다. 최상단 `FLEET` 줄은 활성 계정들을 풀링합니다(창별 평균 사용률, 가장 빠른 리셋 시각, 비활성 계정이 제외되면 `+N off` 표기). 각 계정 줄에는 요금제(`Max 20x` / `Pro`), 상태 컬럼, 세 개의 쿼터 게이지 — `Ses` 5시간 세션, `Wk` 전체 7일, `Fbl` 모델별 7일(Fable, 해당 창이 없으면 Sonnet 창) — 이 `사용률% 리셋까지-남은-시간` 형태로 표시됩니다. 오른쪽 `End` 막대는 날짜와 D-day를 함께 표시하며 추정 결제일에는 `~`를 붙입니다.
 
 컬러 터미널에서는 게이지가 사용률만큼 배경색이 채워진 막대로 그려집니다(위 예시의 대괄호는 `NO_COLOR` 폴백 표기). 회색 `-` 막대는 teamclaude가 해당 창을 보고하지 않았다는 뜻입니다. 모호폭 문자(`▶ × ⛔`)가 2칸을 차지하는 CJK 터미널에서도 칸이 어긋나지 않도록 모든 표시는 ASCII만 사용합니다.
 
@@ -21,6 +21,14 @@ teamclaude TUI를 그대로 미러링한 대시보드입니다. 최상단 `FLEET
 - `off` — 로테이션에서 제외된 계정
 - 막대 색상: 초록 < 70% < 노랑 < 90% < 빨강
 - `TC down` — 프록시가 실행 중이 아님, `teamclaude not installed` — CLI가 설치되지 않음
+
+### 2026-09-11 날짜 표시 복구
+
+오른쪽 `End` 색상 막대에 날짜와 `D-N`을 함께 표시합니다. 명시된 구독 종료일이 없으면 구독 생성일의 월 단위 기념일로 다음 결제일을 추정하고 `~09/24 D-13`처럼 `~`를 붙입니다. 추정 결제일은 해지·종료 확정일이 아닙니다. 3일 이하 빨강·7일 이하 노랑·나머지 초록이며 미확인 날짜는 `-`입니다.
+
+새 TeamCodex 기반 Claude 프록시가 `profile`을 생략하면 로컬 계정 UUID가 일치하는 OAuth 프로필을 Anthropic의 고정 HTTPS 주소에서 읽습니다. 구독 상태·생성일·요금제만 1시간 캐시하고 토큰은 캐시에 저장하지 않습니다. 환경 HTTP 프록시·리다이렉트는 사용하지 않으며 실패한 조회는 60초 뒤 재시도합니다. `TEAMCLAUDE_CONFIG`가 있으면 해당 설정을 사용합니다. 기존 프록시가 프로필을 제공하면 추가 조회하지 않습니다.
+
+이 상태줄은 구독을 해지하거나 계정 라우팅을 변경하지 않습니다.
 
 ## 요구 사항
 
@@ -101,13 +109,13 @@ accounts` 순서다. (계정이 바뀌면 프롬프트 캐시는 새로 쌓인�
 
 ## 자동 업데이트
 
-설치하면 그대로 자동 업데이트됩니다. 상태줄 래퍼가 **하루에 한 번** 백그라운드에서
+자동 업데이트는 기본적으로 꺼져 있습니다. 켜면 상태줄 래퍼가 **하루에 한 번** 백그라운드에서
 GitHub `main`의 최신 커밋을 확인하고, 설치본과 다를 때만 `install.sh`를 다시 실행합니다.
 
 - 확인·설치는 상태줄 렌더와 완전히 분리된 백그라운드 프로세스라 표시 지연이 없고,
   실패(오프라인 등)는 조용히 넘어가 다음 날 다시 시도합니다.
 - 기록은 `~/.claude/teamclaude-statusline-update.log`에 남습니다.
-- 끄려면 `~/.claude/teamclaude-statusline-config.json`에 `"autoUpdate": false`를 추가하세요.
+- 켜려면 `~/.claude/teamclaude-statusline-config.json`에 `"autoUpdate": true`를 추가하세요.
 
 ## 설정
 
@@ -161,10 +169,11 @@ enabled accounts the way the TUI does (average utilization per window, soonest
 reset, `+N off` when disabled accounts were excluded). Each account row shows
 its billing plan (`Max 20x` / `Pro`), a status column, three quota gauges —
 `Ses` 5h session, `Wk` overall 7d, `Fbl` model 7d (Sonnet window when that is
-all there is) — with `usage% reset-countdown` inside, and the ESTIMATED next
-billing date as a `D-N` countdown (the monthly anniversary of the
-subscription's creation, as the TUI computes it; red ≤ 3 days, yellow ≤ 7;
-hidden when the subscription is broken — the status column turns red instead).
+all there is) — with `usage% reset-countdown` inside. The `End` gauge shows
+the local date and `D-N`; a `~` prefix marks an estimated next billing date
+from the monthly subscription anniversary, not a confirmed cancellation.
+Explicit subscription end dates take precedence. Missing dates show `-`.
+The gauge is red at 3 days or less, yellow at 7 or less, otherwise green.
 In a color terminal the gauges are background-filled bars proportional to
 usage (the brackets above are the `NO_COLOR` fallback); a gray `-` bar means
 teamclaude did not report that window. Every glyph is ASCII so the columns
@@ -260,12 +269,12 @@ cache re-warms on the new account.)
 
 ### Auto-update
 
-Once installed, it keeps itself up to date. The status-line wrapper checks the
-latest commit on GitHub `main` **once a day** in a detached background process
+Auto-update is disabled by default. When enabled, the status-line wrapper checks
+the latest commit on GitHub `main` **once a day** in a detached background process
 and re-runs `install.sh` only when it differs from the installed commit.
 Failures (offline, rate limits) are silent and retried the next day; activity
-is logged to `~/.claude/teamclaude-statusline-update.log`. Opt out by adding
-`"autoUpdate": false` to `~/.claude/teamclaude-statusline-config.json`.
+is logged to `~/.claude/teamclaude-statusline-update.log`. Enable it by adding
+`"autoUpdate": true` to `~/.claude/teamclaude-statusline-config.json`.
 
 ### Configuration
 
