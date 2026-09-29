@@ -33,6 +33,12 @@ printf 'PIN=%s INDEX=%s ARGS=%s\n' \
 SH
 chmod +x "$TEST_BIN/teamclaude"
 
+cat > "$TEST_BIN/claude" <<'SH'
+#!/usr/bin/env bash
+printf 'NATIVE=%s\n' "$*"
+SH
+chmod +x "$TEST_BIN/claude"
+
 install_once() {
   HOME="$TEST_HOME" SHELL=/bin/bash CLAUDE_DIR="$TEST_HOME/.claude" \
     NO_PROBE=1 PATH="$TEST_BIN:$PATH" "$REPO_DIR/install.sh" >/dev/null
@@ -63,6 +69,10 @@ selected=$(HOME="$TEST_HOME" PATH="$TEST_BIN:$PATH" \
   bash --noprofile --rcfile "$TEST_HOME/.bashrc" -ic 'claude 2 --continue' 2>/dev/null)
 grep -q 'TeamClaude #2: two@example.com' <<< "$selected"
 grep -q 'PIN=two@example.com INDEX=2 ARGS=run -- --continue' <<< "$selected"
+
+updated=$(HOME="$TEST_HOME" PATH="$TEST_BIN:$PATH" \
+  bash --noprofile --rcfile "$TEST_HOME/.bashrc" -ic 'claude update' 2>/dev/null)
+grep -qx 'NATIVE=update' <<< "$updated"
 
 HOME="$TEST_HOME" SHELL=/bin/zsh CLAUDE_DIR="$TEST_HOME/.claude" \
   PATH="$TEST_BIN:$PATH" \

@@ -11,6 +11,10 @@ claude() {
     fi
 
     case "${1:-}" in
+        update)
+            command claude "$@"
+            return
+            ;;
         ''|*[!0-9]*)
             command teamclaude run -- "$@"
             return
